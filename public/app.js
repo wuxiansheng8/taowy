@@ -143,10 +143,10 @@ function num(value, fallback) {
 
 function renderRace(race) {
   $('#raceFacts').innerHTML = facts({
-    '当前 subnet 数量': race.currentSubnetCount ?? '--',
-    '是否达到上限 128': race.atLimit ? '是' : '否',
+    '当前子网数量': race.currentSubnetCount ?? '--',
+    '是否达到上限': race.atLimit ? '是' : '否',
     '当前注册成本': fmt(race.registrationCost, ' TAO'),
-    '当前 immunity period': race.immunityPeriod ?? '--',
+    '新区块保护': formatProtection(race.immunityPeriod),
     '当前区块高度': race.currentBlock ?? '--',
     '下一个可淘汰候选': race.nextPruneCandidate ?? '--',
     '不在免疫期数量': race.nonImmuneCount ?? '--'
@@ -161,6 +161,13 @@ function renderRace(race) {
 
 function facts(map) {
   return Object.entries(map).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+function formatProtection(blocks) {
+  const n = Number(blocks);
+  if (!Number.isFinite(n)) return '--';
+  const days = Math.round((n * 12) / 86400);
+  return `${n.toLocaleString('zh-CN')} ≈ ${days}天`;
 }
 
 async function loadSettings() {
