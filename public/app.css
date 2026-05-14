@@ -227,15 +227,16 @@ dl {
 dt { color: var(--muted); }
 dd { margin: 0; font-weight: 700; }
 .race-facts {
-  grid-template-columns: minmax(118px, 1fr) minmax(140px, auto);
-  gap: 10px 18px;
+  grid-template-columns: max-content minmax(150px, 1fr);
+  gap: 10px 22px;
   align-items: baseline;
+  justify-content: start;
 }
 .race-facts dt {
   white-space: nowrap;
 }
 .race-facts dd {
-  text-align: right;
+  text-align: left;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
