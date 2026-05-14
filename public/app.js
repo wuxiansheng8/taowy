@@ -127,8 +127,8 @@ function renderCards(items) {
       </div>
       <div class="card-metrics">
         <div><span>当前市值</span><b>${fmtFixed(s.marketCap, 2, ' TAO')}</b></div>
-        <div><span>1小时交易量</span><b>${fmt(s.volume1h)}</b></div>
-        <div><span>24小时交易量</span><b>${fmt(s.volume24h)}</b></div>
+        <div><span>1小时交易量</span><b>${fmtFixed(s.volume1h, 2)}</b></div>
+        <div><span>24小时交易量</span><b>${fmtFixed(s.volume24h, 2)}</b></div>
         <div><span>注销价格</span><b>${fmtTokenPrice(s.deregistrationPrice ?? s.emaPrice)}</b></div>
       </div>
     </article>
@@ -152,7 +152,7 @@ function renderRace(race) {
   $('#raceFacts').innerHTML = facts({
     '当前子网数量': race.currentSubnetCount ?? '--',
     '是否达到上限': race.atLimit ? '是' : '否',
-    '当前注册成本': fmt(race.registrationCost, ' TAO'),
+    '当前注册成本': fmtFixed(race.registrationCost, 2, ' TAO'),
     '新区块保护': formatProtection(race.immunityPeriod),
     '当前区块高度': race.currentBlock ?? '--',
     '下一个可淘汰候选': race.nextPruneCandidate ?? '--',
