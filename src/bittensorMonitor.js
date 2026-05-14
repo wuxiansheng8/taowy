@@ -50,7 +50,9 @@ export class BittensorMonitor {
     this.clients = new Set();
     this.pollTimer = null;
     this.verifyTimer = null;
+    this.wsRotateTimer = null;
     this.api = null;
+    this.wsConnecting = null;
     this.lastSubnetSnapshot = new Map();
     this.volumeHistory = new Map();
     this.refreshPromise = null;
@@ -81,9 +83,12 @@ export class BittensorMonitor {
   schedule() {
     clearInterval(this.pollTimer);
     clearInterval(this.verifyTimer);
+    clearInterval(this.wsRotateTimer);
     const cfg = this.getConfig().collector;
     this.pollTimer = setInterval(() => this.refresh('定时采集').catch((e) => this.recordError(e)), cfg.pollIntervalMs || 60000);
     this.verifyTimer = setInterval(() => this.verifySubnetList().catch((e) => this.recordError(e)), cfg.verifyIntervalMs || 300000);
+    const wsRotateIntervalMs = Math.max(10 * 60 * 1000, Number(cfg.wsRotateIntervalMs || 30 * 60 * 1000));
+    this.wsRotateTimer = setInterval(() => this.connectWs('定时轮换').catch((e) => this.recordError(e)), wsRotateIntervalMs);
   }
 
   async refresh(reason = '手动刷新') {
@@ -182,12 +187,20 @@ export class BittensorMonitor {
     });
   }
 
-  async connectWs() {
+  async connectWs(reason = '启动订阅') {
+    if (this.wsConnecting) return this.wsConnecting;
+    this.wsConnecting = this.doConnectWs(reason).finally(() => {
+      this.wsConnecting = null;
+    });
+    return this.wsConnecting;
+  }
+
+  async doConnectWs(reason = '启动订阅') {
     if (this.api) {
       await this.api.disconnect();
       this.api = null;
     }
-    const endpoint = this.pool.firstWsEndpoint();
+    const endpoint = this.pool.nextWsEndpoint();
     const provider = new WsProvider(endpoint, 5000);
     this.api = await ApiPromise.create({ provider, throwOnConnect: false });
     await this.api.rpc.chain.subscribeNewHeads(async (header) => {
@@ -202,7 +215,7 @@ export class BittensorMonitor {
         this.logger.warn('读取新区块 events 失败', { blockNumber, error: error.message });
       }
     });
-    this.logger.info('已订阅 Bittensor 新区块头', { endpoint: maskEndpoint(endpoint) });
+    this.logger.info('已订阅 Bittensor 新区块头', { reason, endpoint: maskEndpoint(endpoint) });
   }
 
   async handleEvents(blockNumber, events) {

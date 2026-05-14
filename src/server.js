@@ -71,6 +71,7 @@ app.put('/api/settings', requireAuth, (req, res) => {
   config = next;
   saveConfig(config);
   monitor.schedule();
+  monitor.connectWs('设置更新').catch((error) => logger.warn('新区块订阅重连失败', { error: error.message }));
   logger.info('系统设置已更新', { username: req.session.user.username });
   res.json(publicConfig(config));
 });

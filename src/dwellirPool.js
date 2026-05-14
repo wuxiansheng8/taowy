@@ -63,6 +63,10 @@ export class DwellirPool {
   }
 
   firstWsEndpoint() {
+    return this.nextWsEndpoint();
+  }
+
+  nextWsEndpoint() {
     return toWsEndpoint(this.nextKey().endpoint);
   }
 

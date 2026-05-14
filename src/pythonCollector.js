@@ -11,9 +11,9 @@ export class PythonCollector {
   }
 
   async collect() {
-    const keys = this.pool.enabledKeys();
-    if (!keys.length) throw new Error('未配置 Dwellir API，无法采集 subnet 数据');
-    const endpoint = toWsEndpoint(keys[0].endpoint);
+    const key = this.pool.nextKey();
+    const endpoint = toWsEndpoint(key.endpoint);
+    this.logger.info('Python subnet 采集使用 Dwellir API', { name: key.name || key.id });
     const py = process.env.PYTHON_BIN || process.env.PYTHON || 'python3';
     const script = path.join(rootDir, 'scripts', 'bt_collector.py');
     const cfg = this.getConfig();
