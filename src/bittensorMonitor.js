@@ -56,6 +56,7 @@ export class BittensorMonitor {
     this.wsConnecting = null;
     this.lastSubnetSnapshot = new Map();
     this.volumeHistory = new Map();
+    this.priceHistory = new Map();
     this.refreshPromise = null;
     this.restoreState();
   }
@@ -135,7 +136,7 @@ export class BittensorMonitor {
       throw new Error('采集结果为空，保留上次快照');
     }
     const cfg = this.getConfig().collector;
-    const subnets = normalizeSubnets(this.decorateVolumes(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg);
+    const subnets = normalizeSubnets(this.decorateMetrics(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg);
     const ranked = [...subnets].filter((s) => s.raceEligible).sort((a, b) => num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity));
     const immune = subnets.filter((s) => s.inImmunity).sort((a, b) => num(a.immunityEndsAtBlock, 0) - num(b.immunityEndsAtBlock, 0));
     const snapshot = buildSubnetSnapshot(subnets);
@@ -173,23 +174,29 @@ export class BittensorMonitor {
     };
   }
 
-  decorateVolumes(items) {
+  decorateMetrics(items) {
     const now = Date.now();
-    const cutoff = now - 25 * 60 * 60 * 1000;
+    const volumeCutoff = now - 25 * 60 * 60 * 1000;
+    const priceCutoff = now - 30 * 60 * 1000;
     return items.map((item) => {
       const netuid = Number(item.netuid ?? item.netUID ?? item.uid ?? item.id);
       const rawVolume = nullableNumber(item.rawVolume ?? item.cumulativeVolume);
+      const alphaPrice = nullableNumber(item.alphaPrice ?? item.alpha_price ?? item.price);
+      const next = { ...item };
       if (Number.isFinite(netuid) && rawVolume != null) {
-        const history = (this.volumeHistory.get(netuid) || []).filter((point) => point.ts >= cutoff);
+        const history = (this.volumeHistory.get(netuid) || []).filter((point) => point.ts >= volumeCutoff);
         history.push({ ts: now, value: rawVolume });
         this.volumeHistory.set(netuid, history);
-        return {
-          ...item,
-          volume1h: item.volume1h ?? deltaSince(history, now - 60 * 60 * 1000),
-          volume24h: item.volume24h ?? deltaSince(history, now - 24 * 60 * 60 * 1000)
-        };
+        next.volume1h = item.volume1h ?? deltaSince(history, now - 60 * 60 * 1000);
+        next.volume24h = item.volume24h ?? deltaSince(history, now - 24 * 60 * 60 * 1000);
       }
-      return item;
+      if (Number.isFinite(netuid) && alphaPrice != null) {
+        const history = (this.priceHistory.get(netuid) || []).filter((point) => point.ts >= priceCutoff);
+        history.push({ ts: now, value: alphaPrice });
+        this.priceHistory.set(netuid, history);
+        next.priceChange10m = deltaSince(history, now - 10 * 60 * 1000);
+      }
+      return next;
     });
   }
 
@@ -283,6 +290,7 @@ export class BittensorMonitor {
     };
     this.lastSubnetSnapshot = buildSubnetSnapshot(this.state.subnets || []);
     this.volumeHistory = new Map(Object.entries(saved.volumeHistory || {}).map(([key, value]) => [Number(key), value]));
+    this.priceHistory = new Map(Object.entries(saved.priceHistory || {}).map(([key, value]) => [Number(key), value]));
   }
 
   persistState() {
@@ -309,7 +317,10 @@ export class BittensorMonitor {
       },
       volumeHistory: currentHasRealData
         ? Object.fromEntries(this.volumeHistory)
-        : (previous?.volumeHistory || Object.fromEntries(this.volumeHistory))
+        : (previous?.volumeHistory || Object.fromEntries(this.volumeHistory)),
+      priceHistory: currentHasRealData
+        ? Object.fromEntries(this.priceHistory)
+        : (previous?.priceHistory || Object.fromEntries(this.priceHistory))
     });
   }
 
@@ -379,6 +390,7 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
       netuid,
       name: item.name || item.subnetName || `Subnet ${netuid}`,
       alphaPrice: nullableNumber(item.alphaPrice ?? item.alpha_price ?? item.price),
+      priceChange10m: nullableNumber(item.priceChange10m ?? item.price_change_10m),
       marketCap: nullableNumber(item.marketCap ?? item.market_cap ?? item.marketCapTao ?? item.market_cap_tao)
         ?? computeMarketCap(item),
       registrationCost: nullableNumber(item.registrationCost ?? item.registration_cost ?? registrationCost),

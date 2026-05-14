@@ -121,7 +121,10 @@ function renderCards(items) {
       <div class="card-head">
         <h3>${escapeHtml(s.name)} <span>(SN${s.netuid})</span></h3>
       </div>
-      <strong class="card-price">${fmtTokenPrice(s.alphaPrice)}</strong>
+      <div class="card-price-row">
+        <strong class="card-price">${fmtTokenPrice(s.alphaPrice)}</strong>
+        ${priceChangeBadge(s.priceChange10m)}
+      </div>
       <div class="card-metrics">
         <div><span>当前市值</span><b>${fmtFixed(s.marketCap, 2, ' TAO')}</b></div>
         <div><span>1小时交易量</span><b>${fmt(s.volume1h)}</b></div>
@@ -321,6 +324,22 @@ function fmtTokenPrice(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return `τ${escapeHtml(String(value))}`;
   return `τ${n.toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+}
+
+function priceChangeBadge(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '<small class="price-change flat">10分钟 --</small>';
+  if (Math.abs(n) < 0.0000000001) return '<small class="price-change flat">10分钟 0.0000</small>';
+  const cls = n > 0 ? 'up' : 'down';
+  const sign = n > 0 ? '+' : '';
+  return `<small class="price-change ${cls}">10分钟 ${sign}${fmtCompactDelta(n)}</small>`;
+}
+
+function fmtCompactDelta(value) {
+  const n = Number(value);
+  const abs = Math.abs(n);
+  const digits = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 function normalizeDwellirInput(value) {

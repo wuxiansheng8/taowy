@@ -193,12 +193,26 @@ nav { display: grid; gap: 8px; }
 .card h3 span {
   font-weight: 700;
 }
+.card-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
 .card-price {
   display: block;
   font-size: 20px;
   line-height: 1.2;
   color: var(--ink);
 }
+.price-change {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.price-change.up { color: #08a56f; }
+.price-change.down { color: var(--red); }
+.price-change.flat { color: var(--muted); font-weight: 600; }
 .card-metrics {
   display: grid;
   gap: 4px;
