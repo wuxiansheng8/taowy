@@ -51,7 +51,7 @@ export class BittensorMonitor {
     this.pollTimer = null;
     this.verifyTimer = null;
     this.api = null;
-    this.lastNetuids = new Set();
+    this.lastSubnetSnapshot = new Map();
     this.volumeHistory = new Map();
     this.refreshPromise = null;
     this.restoreState();
@@ -127,9 +127,9 @@ export class BittensorMonitor {
     const subnets = normalizeSubnets(this.decorateVolumes(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg);
     const ranked = [...subnets].filter((s) => s.raceEligible).sort((a, b) => num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity));
     const immune = subnets.filter((s) => s.inImmunity).sort((a, b) => num(a.immunityEndsAtBlock, 0) - num(b.immunityEndsAtBlock, 0));
-    const netuids = new Set(subnets.map((s) => Number(s.netuid)));
-    this.detectListDiff(netuids);
-    this.lastNetuids = netuids;
+    const snapshot = buildSubnetSnapshot(subnets);
+    this.detectSubnetDiff(snapshot);
+    this.lastSubnetSnapshot = snapshot;
     this.state = {
       status: 'ok',
       updatedAt: new Date().toISOString(),
@@ -262,7 +262,7 @@ export class BittensorMonitor {
       chainFlow: this.prunedChainFlowFrom(saved.state.chainFlow),
       errors: []
     };
-    this.lastNetuids = new Set((this.state.subnets || []).map((s) => Number(s.netuid)).filter(Number.isFinite));
+    this.lastSubnetSnapshot = buildSubnetSnapshot(this.state.subnets || []);
     this.volumeHistory = new Map(Object.entries(saved.volumeHistory || {}).map(([key, value]) => [Number(key), value]));
   }
 
@@ -325,23 +325,14 @@ export class BittensorMonitor {
   }
 
   async verifySubnetList() {
-    const before = new Set(this.lastNetuids);
     await this.refresh('subnet list 校验');
-    const after = new Set(this.lastNetuids);
-    if (before.size && changed(before, after)) {
-      await this.notifier.alert('定期校验发现 subnet list 发生变化', {
-        before: [...before].sort((a, b) => a - b),
-        after: [...after].sort((a, b) => a - b)
-      });
-    }
   }
 
-  detectListDiff(next) {
-    if (!this.lastNetuids.size) return;
-    const added = [...next].filter((id) => !this.lastNetuids.has(id));
-    const removed = [...this.lastNetuids].filter((id) => !next.has(id));
-    if (added.length || removed.length) {
-      this.notifier.alert('检测到 subnet 列表变化', { added, removed }).catch(() => {});
+  detectSubnetDiff(next) {
+    if (!this.lastSubnetSnapshot.size) return;
+    const diff = diffSubnetSnapshots(this.lastSubnetSnapshot, next);
+    if (diff.added.length || diff.removed.length || diff.changed.length) {
+      this.notifier.alert(formatSubnetDiffAlert(diff), diff).catch(() => {});
     }
   }
 
@@ -546,14 +537,99 @@ function deltaSince(history, sinceTs) {
   return Number.isFinite(delta) && delta >= 0 ? delta : null;
 }
 
-function num(value, fallback) {
-  return value === null || value === undefined ? fallback : Number(value);
+function buildSubnetSnapshot(subnets) {
+  return new Map((subnets || [])
+    .map((item) => {
+      const netuid = Number(item.netuid);
+      if (!Number.isFinite(netuid)) return null;
+      return [netuid, {
+        netuid,
+        name: normalizeText(item.name),
+        registrationBlock: nullableNumber(item.registrationBlock),
+        immunityEndsAtBlock: nullableNumber(item.immunityEndsAtBlock)
+      }];
+    })
+    .filter(Boolean)
+    .sort(([a], [b]) => a - b));
 }
 
-function changed(a, b) {
-  if (a.size !== b.size) return true;
-  for (const item of a) if (!b.has(item)) return true;
-  return false;
+function diffSubnetSnapshots(before, after) {
+  const added = [];
+  const removed = [];
+  const changedItems = [];
+  for (const [netuid, next] of after) {
+    const prev = before.get(netuid);
+    if (!prev) {
+      added.push(next);
+      continue;
+    }
+    const fields = [];
+    for (const field of ['name', 'registrationBlock', 'immunityEndsAtBlock']) {
+      if (!sameSnapshotValue(prev[field], next[field])) {
+        fields.push({ field, before: prev[field], after: next[field] });
+      }
+    }
+    if (fields.length) changedItems.push({ netuid, name: next.name, fields });
+  }
+  for (const [netuid, prev] of before) {
+    if (!after.has(netuid)) removed.push(prev);
+  }
+  return {
+    added: added.sort((a, b) => a.netuid - b.netuid),
+    removed: removed.sort((a, b) => a.netuid - b.netuid),
+    changed: changedItems.sort((a, b) => a.netuid - b.netuid)
+  };
+}
+
+function formatSubnetDiffAlert(diff) {
+  const parts = ['检测到 subnet 变化'];
+  if (diff.added.length) parts.push(`新增: ${formatSubnetList(diff.added)}`);
+  if (diff.removed.length) parts.push(`移除: ${formatSubnetList(diff.removed)}`);
+  if (diff.changed.length) parts.push(`字段变化: ${formatChangedSubnetList(diff.changed)}`);
+  return parts.join('\n');
+}
+
+function formatSubnetList(items) {
+  const limit = 30;
+  const shown = items.slice(0, limit).map((item) => `#${item.netuid}${item.name ? ` ${item.name}` : ''}`);
+  if (items.length > limit) shown.push(`另有 ${items.length - limit} 个`);
+  return shown.join(', ');
+}
+
+function formatChangedSubnetList(items) {
+  const limit = 12;
+  const shown = items.slice(0, limit).map(formatChangedSubnet);
+  if (items.length > limit) shown.push(`另有 ${items.length - limit} 个`);
+  return shown.join('; ');
+}
+
+function formatChangedSubnet(item) {
+  const fields = item.fields.map((change) => `${snapshotFieldLabel(change.field)} ${formatSnapshotValue(change.before)} -> ${formatSnapshotValue(change.after)}`).join(', ');
+  return `#${item.netuid}${item.name ? ` ${item.name}` : ''} (${fields})`;
+}
+
+function snapshotFieldLabel(field) {
+  return {
+    name: '名称',
+    registrationBlock: '注册区块',
+    immunityEndsAtBlock: '免疫结束区块'
+  }[field] || field;
+}
+
+function formatSnapshotValue(value) {
+  return value === null || value === undefined || value === '' ? '--' : String(value);
+}
+
+function sameSnapshotValue(a, b) {
+  return formatSnapshotValue(a) === formatSnapshotValue(b);
+}
+
+function normalizeText(value) {
+  return String(value || '').trim();
+}
+
+function num(value, fallback) {
+  return value === null || value === undefined ? fallback : Number(value);
 }
 
 function maskEndpoint(endpoint) {
