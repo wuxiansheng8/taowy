@@ -1,14 +1,17 @@
 :root {
   color-scheme: light;
-  --ink: #18201d;
-  --muted: #63706b;
-  --line: #d9dfdc;
-  --paper: #f6f7f5;
+  --ink: #10283a;
+  --muted: #5d7184;
+  --line: #cde9eb;
+  --paper: #eefbfc;
   --panel: #ffffff;
-  --green: #116149;
-  --red: #a43f3a;
-  --amber: #976210;
-  --blue: #285e8f;
+  --green: #12bfa7;
+  --green-dark: #008f8d;
+  --green-soft: #e8f8f6;
+  --red: #e64d60;
+  --amber: #f4b000;
+  --blue: #2e74ff;
+  --shadow: 0 18px 46px rgba(0, 143, 141, .12);
 }
 
 * { box-sizing: border-box; }
@@ -16,23 +19,28 @@ body {
   margin: 0;
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
   color: var(--ink);
-  background: var(--paper);
+  background:
+    radial-gradient(circle at 28% 0, rgba(18, 191, 167, .14), transparent 30%),
+    linear-gradient(135deg, #f8feff 0%, var(--paper) 100%);
 }
 button, input, select {
   font: inherit;
 }
 button {
-  border: 1px solid var(--ink);
-  background: var(--ink);
+  border: 1px solid var(--green);
+  background: var(--green);
   color: white;
   min-height: 40px;
   padding: 0 14px;
   border-radius: 6px;
   cursor: pointer;
+  box-shadow: 0 10px 24px rgba(18, 191, 167, .18);
 }
 button.ghost {
   background: transparent;
   color: var(--ink);
+  border-color: var(--line);
+  box-shadow: none;
 }
 .hidden { display: none !important; }
 .login {
@@ -47,7 +55,7 @@ button.ghost {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 24px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, .08);
+  box-shadow: var(--shadow);
 }
 .login-box h1 { margin: 0 0 20px; font-size: 26px; }
 label { display: grid; gap: 8px; color: var(--muted); font-size: 14px; }
@@ -59,6 +67,10 @@ input, select {
   padding: 0 10px;
   color: var(--ink);
   background: white;
+}
+input:focus, select:focus {
+  outline: 2px solid rgba(18, 191, 167, .22);
+  border-color: var(--green);
 }
 .login-box label { margin-bottom: 14px; }
 .app {
@@ -72,7 +84,8 @@ input, select {
   height: 100vh;
   padding: 18px;
   border-right: 1px solid var(--line);
-  background: #fbfcfa;
+  background: rgba(248, 254, 255, .92);
+  box-shadow: 12px 0 34px rgba(0, 143, 141, .08);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -81,24 +94,29 @@ input, select {
   display: grid;
   gap: 6px;
 }
-.brand strong { font-size: 20px; }
+.brand strong { font-size: 22px; letter-spacing: .2px; }
 .brand span { color: var(--muted); font-size: 13px; }
 nav { display: grid; gap: 8px; }
 .nav {
   text-align: left;
-  background: transparent;
-  color: var(--ink);
-  border-color: transparent;
+  background: rgba(232, 248, 246, .72);
+  color: var(--green-dark);
+  border-color: rgba(205, 233, 235, .9);
+  min-height: 58px;
+  border-radius: 16px;
+  padding: 0 18px;
+  box-shadow: none;
 }
 .nav.active {
   border-color: var(--green);
-  color: var(--green);
-  background: #edf6f1;
+  color: var(--green-dark);
+  background: linear-gradient(135deg, rgba(18, 191, 167, .22), rgba(232, 248, 246, .88));
+  border-left-width: 4px;
 }
 .sidebar .ghost { margin-top: auto; }
 .content {
   min-width: 0;
-  padding: 22px;
+  padding: 22px 32px 38px;
 }
 .topbar {
   display: flex;
@@ -107,7 +125,7 @@ nav { display: grid; gap: 8px; }
   align-items: center;
   margin-bottom: 16px;
 }
-.topbar h2 { margin: 0; font-size: 24px; }
+.topbar h2 { margin: 0; font-size: 24px; color: var(--ink); }
 .topbar p { margin: 4px 0 0; color: var(--muted); }
 .actions {
   display: flex;
@@ -128,6 +146,7 @@ nav { display: grid; gap: 8px; }
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px;
+  box-shadow: var(--shadow);
 }
 .stats span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
 .stats strong { font-size: 20px; }
@@ -152,10 +171,11 @@ nav { display: grid; gap: 8px; }
   min-height: 156px;
   display: grid;
   gap: 8px;
+  box-shadow: 0 12px 30px rgba(0, 143, 141, .08);
 }
-.card.risk-watch { border-color: #e0b667; }
-.card.risk-immune { border-color: #9fc7b7; }
-.card.risk-unknown { border-color: #c9cfcb; }
+.card.risk-watch { border-color: rgba(244, 176, 0, .72); }
+.card.risk-immune { border-color: rgba(18, 191, 167, .58); }
+.card.risk-unknown { border-color: var(--line); }
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -168,8 +188,8 @@ nav { display: grid; gap: 8px; }
   overflow-wrap: anywhere;
 }
 .pill {
-  color: var(--green);
-  background: #edf6f1;
+  color: var(--green-dark);
+  background: var(--green-soft);
   border-radius: 999px;
   padding: 3px 8px;
   font-size: 12px;
@@ -245,6 +265,7 @@ th { color: var(--muted); font-weight: 600; }
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
+  box-shadow: 0 12px 28px rgba(0, 143, 141, .07);
 }
 .log-tools {
   display: flex;
@@ -261,10 +282,11 @@ th { color: var(--muted); font-weight: 600; }
 }
 .log {
   background: var(--panel);
-  border-left: 4px solid var(--blue);
+  border-left: 4px solid var(--green);
   padding: 10px 12px;
   border-radius: 6px;
   font-size: 13px;
+  box-shadow: 0 10px 24px rgba(0, 143, 141, .06);
 }
 .log.alert { border-left-color: var(--red); background: #fff7f5; }
 .log.warn { border-left-color: var(--amber); }
