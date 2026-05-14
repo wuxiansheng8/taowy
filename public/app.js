@@ -16,6 +16,7 @@ setInterval(() => {
     second: '2-digit',
     hour12: false
   }).format(new Date());
+  renderUptime();
 }, 1000);
 
 async function api(path, opts = {}) {
@@ -105,6 +106,7 @@ function updateDashboard(data) {
   $('#statBlock').textContent = data.currentBlock || '--';
   $('#statCount').textContent = `${data.race?.currentSubnetCount || data.subnets.length}/${data.race?.maxSubnets || 128}`;
   $('#statFlow').textContent = flowText(data.chainFlow);
+  renderUptime();
   if (data.lastAlert) {
     $('#alertBox').classList.remove('hidden');
     $('#alertBox').textContent = `最近提醒：区块 ${data.lastAlert.blockNumber} ${data.lastAlert.eventLabel || data.lastAlert.event}`;
@@ -328,6 +330,28 @@ function flowText(flow = {}) {
   const value = `${fmtAmount(flow.stakeTaoToday)}/${fmtAmount(flow.unstakeTaoToday)}`;
   if (flow.amountReliable === false) return `${value}（部分金额未识别）`;
   return value;
+}
+
+function renderUptime() {
+  const el = $('#statUptime');
+  if (!el) return;
+  if (!state.data?.startedAt) {
+    el.textContent = '--';
+    return;
+  }
+  el.textContent = durationText(Date.now() - new Date(state.data.startedAt).getTime());
+}
+
+function durationText(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (days > 0) return `${days}天 ${hours}小时 ${minutes}分`;
+  if (hours > 0) return `${hours}小时 ${minutes}分 ${seconds}秒`;
+  if (minutes > 0) return `${minutes}分 ${seconds}秒`;
+  return `${seconds}秒`;
 }
 
 function fmtTime(value) {

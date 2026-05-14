@@ -46,6 +46,7 @@ export class BittensorMonitor {
     this.logger = logger;
     this.notifier = notifier;
     this.python = new PythonCollector(pool, getConfig, logger);
+    this.startedAt = Date.now();
     this.state = structuredClone(ZERO_STATE);
     this.clients = new Set();
     this.pollTimer = null;
@@ -71,7 +72,12 @@ export class BittensorMonitor {
 
   snapshot(sort = 'netuid') {
     const subnets = [...this.state.subnets].sort((a, b) => compareSubnets(a, b, sort));
-    return { ...this.state, subnets };
+    return {
+      ...this.state,
+      startedAt: new Date(this.startedAt).toISOString(),
+      uptimeMs: Date.now() - this.startedAt,
+      subnets
+    };
   }
 
   async start() {
