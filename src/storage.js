@@ -17,13 +17,13 @@ export const defaultConfig = {
     passwordHash: process.env.WEB_PASSWORD ? bcrypt.hashSync(process.env.WEB_PASSWORD, 10) : defaultHash
   },
   apiPool: {
-    globalRps: 20,
+    globalRps: 15,
     timeoutMs: 10000,
     retries: 2,
     keys: []
   },
   collector: {
-    pollIntervalMs: 60000,
+    pollIntervalMs: 300000,
     verifyIntervalMs: 300000,
     blockTimeMs: 12000,
     maxSubnets: 128

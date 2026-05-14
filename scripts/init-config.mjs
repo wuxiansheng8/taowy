@@ -19,9 +19,9 @@ const next = {
     username,
     passwordHash: bcrypt.hashSync(password, 10)
   },
-  apiPool: current.apiPool || { globalRps: 20, timeoutMs: 10000, retries: 2, keys: [] },
+  apiPool: current.apiPool || { globalRps: 15, timeoutMs: 10000, retries: 2, keys: [] },
   collector: current.collector || {
-    pollIntervalMs: 60000,
+    pollIntervalMs: 300000,
     verifyIntervalMs: 300000,
     blockTimeMs: 12000,
     maxSubnets: 128
