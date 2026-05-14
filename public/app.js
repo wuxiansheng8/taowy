@@ -329,7 +329,7 @@ function fmtTokenPrice(value) {
 function priceChangeBadge(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '<small class="price-change flat">10分钟 --</small>';
-  if (Math.abs(n) < 0.0000000001) return '<small class="price-change flat">10分钟 0.0000</small>';
+  if (Math.abs(n) < 0.0000005) return '<small class="price-change flat">10分钟 0.000000</small>';
   const cls = n > 0 ? 'up' : 'down';
   const sign = n > 0 ? '+' : '';
   return `<small class="price-change ${cls}">10分钟 ${sign}${fmtCompactDelta(n)}</small>`;

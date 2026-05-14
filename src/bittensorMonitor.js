@@ -194,7 +194,7 @@ export class BittensorMonitor {
         const history = (this.priceHistory.get(netuid) || []).filter((point) => point.ts >= priceCutoff);
         history.push({ ts: now, value: alphaPrice });
         this.priceHistory.set(netuid, history);
-        next.priceChange10m = deltaSince(history, now - 10 * 60 * 1000);
+        next.priceChange10m = deltaFromPointAtOrBefore(history, now - 10 * 60 * 1000);
       }
       return next;
     });
@@ -290,7 +290,6 @@ export class BittensorMonitor {
     };
     this.lastSubnetSnapshot = buildSubnetSnapshot(this.state.subnets || []);
     this.volumeHistory = new Map(Object.entries(saved.volumeHistory || {}).map(([key, value]) => [Number(key), value]));
-    this.priceHistory = new Map(Object.entries(saved.priceHistory || {}).map(([key, value]) => [Number(key), value]));
   }
 
   persistState() {
@@ -317,10 +316,7 @@ export class BittensorMonitor {
       },
       volumeHistory: currentHasRealData
         ? Object.fromEntries(this.volumeHistory)
-        : (previous?.volumeHistory || Object.fromEntries(this.volumeHistory)),
-      priceHistory: currentHasRealData
-        ? Object.fromEntries(this.priceHistory)
-        : (previous?.priceHistory || Object.fromEntries(this.priceHistory))
+        : (previous?.volumeHistory || Object.fromEntries(this.volumeHistory))
     });
   }
 
@@ -566,6 +562,19 @@ function deltaSince(history, sinceTs) {
   }
   const delta = current - base;
   return Number.isFinite(delta) && delta >= 0 ? delta : null;
+}
+
+function deltaFromPointAtOrBefore(history, sinceTs) {
+  if (history.length < 2) return null;
+  const current = history[history.length - 1].value;
+  let base = null;
+  for (const point of history) {
+    if (point.ts <= sinceTs) base = point.value;
+    else break;
+  }
+  if (base === null) return null;
+  const delta = current - base;
+  return Number.isFinite(delta) ? delta : null;
 }
 
 function buildSubnetSnapshot(subnets) {
