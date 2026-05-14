@@ -202,6 +202,30 @@ $('#apiList').addEventListener('click', (event) => {
   if (event.target.matches('[data-remove]')) event.target.closest('.api-row').remove();
 });
 
+$('#testTelegramBtn').addEventListener('click', async () => {
+  const btn = $('#testTelegramBtn');
+  btn.disabled = true;
+  $('#settingsMsg').textContent = '正在发送 Telegram 测试...';
+  try {
+    const form = $('#settingsForm');
+    await api('/api/telegram/test', {
+      method: 'POST',
+      body: JSON.stringify({
+        telegram: {
+          enabled: form.tgEnabled.checked,
+          botToken: form.botToken.value.trim(),
+          chatId: form.chatId.value.trim()
+        }
+      })
+    });
+    $('#settingsMsg').textContent = 'Telegram 测试已发送，请查看 TG';
+  } catch (error) {
+    $('#settingsMsg').textContent = error.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 $('#settingsForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;

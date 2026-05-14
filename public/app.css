@@ -36,6 +36,10 @@ button {
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(18, 191, 167, .18);
 }
+button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
 button.ghost {
   background: transparent;
   color: var(--ink);

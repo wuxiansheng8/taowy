@@ -91,6 +91,39 @@ app.post('/api/refresh', requireAuth, async (req, res) => {
   res.json(await monitor.refresh('手动刷新'));
 });
 
+app.post('/api/telegram/test', requireAuth, async (req, res) => {
+  const current = config.telegram || {};
+  const body = req.body?.telegram || {};
+  const tg = {
+    enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
+    botToken: body.botToken && !String(body.botToken).includes('******')
+      ? String(body.botToken).trim()
+      : current.botToken,
+    chatId: body.chatId !== undefined ? String(body.chatId).trim() : current.chatId
+  };
+  if (!tg.enabled || !tg.botToken || !tg.chatId) {
+    res.status(400).json({ error: '请先启用 Telegram 并保存 Bot Token 和 Chat ID' });
+    return;
+  }
+  const now = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date());
+  const result = await notifier.telegram(`TAO 子网提醒\nTelegram 测试推送成功\n北京时间 ${now}`, tg);
+  if (!result.ok) {
+    res.status(502).json({ error: `Telegram 推送失败：${result.error || '配置不可用'}` });
+    return;
+  }
+  logger.info('Telegram 测试推送已发送', { username: req.session.user.username });
+  res.json({ ok: true });
+});
+
 app.get('/api/events', requireAuth, (req, res) => {
   res.setHeader('content-type', 'text/event-stream; charset=utf-8');
   res.setHeader('cache-control', 'no-cache, no-transform');
