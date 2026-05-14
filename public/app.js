@@ -119,13 +119,15 @@ function renderCards(items) {
   $('#cards').innerHTML = sortSubnets(items, state.sort).map((s) => `
     <article class="card risk-${s.riskLevel}">
       <div class="card-head">
-        <h3>${escapeHtml(s.name)}</h3>
-        <span class="pill">#${s.netuid}</span>
+        <h3>${escapeHtml(s.name)} <span>(SN${s.netuid})</span></h3>
       </div>
-      <div class="kv"><span>Alpha 价格</span><b>${fmt(s.alphaPrice)}</b></div>
-      <div class="kv"><span>当前市值</span><b>${fmt(s.marketCap, ' TAO')}</b></div>
-      <div class="kv"><span>1小时交易量</span><b>${fmt(s.volume1h)}</b></div>
-      <div class="kv"><span>24小时交易量</span><b>${fmt(s.volume24h)}</b></div>
+      <strong class="card-price">${fmtTokenPrice(s.alphaPrice)}</strong>
+      <div class="card-metrics">
+        <div><span>当前市值</span><b>${fmtFixed(s.marketCap, 2, ' TAO')}</b></div>
+        <div><span>1小时交易量</span><b>${fmt(s.volume1h)}</b></div>
+        <div><span>24小时交易量</span><b>${fmt(s.volume24h)}</b></div>
+        <div><span>注销价格</span><b>${fmtTokenPrice(s.deregistrationPrice ?? s.emaPrice)}</b></div>
+      </div>
     </article>
   `).join('');
 }
@@ -305,6 +307,20 @@ function fmt(value, suffix = '') {
   const n = Number(value);
   if (!Number.isFinite(n)) return escapeHtml(String(value));
   return `${n.toLocaleString('zh-CN', { maximumFractionDigits: 8 })}${suffix}`;
+}
+
+function fmtFixed(value, digits = 2, suffix = '') {
+  if (value === null || value === undefined || value === '') return '--';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return escapeHtml(String(value));
+  return `${n.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}${suffix}`;
+}
+
+function fmtTokenPrice(value) {
+  if (value === null || value === undefined || value === '') return 'τ--';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return `τ${escapeHtml(String(value))}`;
+  return `τ${n.toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
 function normalizeDwellirInput(value) {
