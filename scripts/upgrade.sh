@@ -17,9 +17,10 @@ env_value() {
   if [[ ! -f .env ]]; then
     return 0
   fi
-  grep -m1 -E "^${key}=" .env \
+  grep -m1 -E "^${key}=" .env 2>/dev/null \
     | cut -d= -f2- \
-    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" \
+    || true
 }
 
 REPO="${GITHUB_REPO:-$(env_value GITHUB_REPO)}"
