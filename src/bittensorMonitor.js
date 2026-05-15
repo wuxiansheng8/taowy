@@ -256,7 +256,7 @@ export class BittensorMonitor {
           if (/SubnetAdded|NetworkAdded/i.test(method)) {
             const netuid = eventNumber(event.data, 0, 'netuid');
             if (netuid !== null) {
-              getSniper().onNewSubnet(netuid, `Subnet ${netuid}`);
+              getSniper().onNewSubnet(netuid, `Subnet ${netuid}`, event.data?.toHuman?.() || event.data?.toString?.());
             }
           }
 

@@ -11,6 +11,7 @@ class Sniper {
     this.walletMap = new Map();
     this.nextNonceByAddress = new Map();
     this.balanceByAddress = new Map();
+    this.hotkeyByNetuid = new Map();
     this.isInitializing = false;
     this.processedNetuids = new Set();
   }
@@ -89,12 +90,13 @@ class Sniper {
     });
   }
 
-  async onNewSubnet(netuid, name) {
+  async onNewSubnet(netuid, name, eventData = null) {
     return this.executeSubnetBuy(netuid, name, {
       requireEnabled: true,
       dedupe: true,
       label: '多钱包打新',
-      triggerText: '多钱包打新触发'
+      triggerText: '多钱包打新触发',
+      eventData
     });
   }
 
@@ -110,6 +112,12 @@ class Sniper {
 
   async executeSubnetBuy(netuid, name, options = {}) {
     if (!this.api) throw new Error('链 API 尚未连接，无法发起购买');
+    const targetHotkey = await this.resolveHotkey(netuid, options.eventData);
+    if (!targetHotkey) {
+      const reason = `子网 #${netuid} 未找到可用 hotkey`;
+      this.logger.warn(reason);
+      return { ok: false, skipped: true, reason };
+    }
     const config = this.getConfig();
     const settings = config.sniper;
 
@@ -150,17 +158,17 @@ class Sniper {
     this.logger.info(`[${options.label || '打新'}] 检测到子网 #${netuid} (${name || '未知'})，启动 ${activePairs.length} 个钱包并发购买...`);
 
     Promise.all(activePairs.map(item =>
-      this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs)
+      this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs, targetHotkey)
     )).catch(err => {
       this.logger.error(`[${options.label || '打新'}] 异常:`, err);
     });
 
-    this.notifier.alert(`[${options.triggerText || '打新触发'}] 子网 #${netuid}\n开启钱包: ${activePairs.length} 个\n每单金额: ${amountTao} TAO`, { netuid })
+    this.notifier.alert(`[${options.triggerText || '打新触发'}] 子网 #${netuid}\n目标 hotkey: ${targetHotkey}\n开启钱包: ${activePairs.length} 个\n每单金额: ${amountTao} TAO`, { netuid, hotkey: targetHotkey })
       .catch(() => {});
-    return { ok: true, netuid, activeWallets: activePairs.length, skippedWallets };
+    return { ok: true, netuid, hotkey: targetHotkey, activeWallets: activePairs.length, skippedWallets };
   }
 
-  async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs) {
+  async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs, targetHotkey) {
     let attempts = 0;
     const amountBigInt = BigInt(Math.floor(amountTao * 1e9));
 
@@ -169,7 +177,7 @@ class Sniper {
       try {
         this.logger.info(`[打新] 钱包【${walletName}】尝试购买 #${netuid} (第 ${attempts} 次)...`);
 
-        const tx = this.api.tx.subtensorModule.addStake(pair.address, netuid, amountBigInt);
+        const tx = this.api.tx.subtensorModule.addStake(targetHotkey, netuid, amountBigInt);
         const result = await this.sendTx(tx, pair, txTimeoutMs);
 
         if (result.success) {
@@ -197,6 +205,53 @@ class Sniper {
     const nextNonce = Number(nonce.toString());
     this.nextNonceByAddress.set(address, nextNonce);
     return nextNonce;
+  }
+
+  async resolveHotkey(netuid, eventData = null) {
+    const eventHotkey = this.hotkeyFromEvent(eventData);
+    if (eventHotkey) {
+      this.hotkeyByNetuid.set(Number(netuid), { hotkey: eventHotkey, source: 'event', updatedAt: Date.now() });
+      return eventHotkey;
+    }
+    const cached = this.hotkeyByNetuid.get(Number(netuid));
+    if (cached && Date.now() - cached.updatedAt < 10 * 60 * 1000) return cached.hotkey;
+    const resolved = await this.querySubnetHotkey(netuid);
+    if (resolved?.hotkey) {
+      this.hotkeyByNetuid.set(Number(netuid), { ...resolved, updatedAt: Date.now() });
+      this.logger.info(`子网 #${netuid} 自动选择 hotkey`, resolved);
+      return resolved.hotkey;
+    }
+    return null;
+  }
+
+  hotkeyFromEvent(data) {
+    const text = JSON.stringify(data || '');
+    const match = text.match(/[1-9A-HJ-NP-Za-km-z]{47,48}/);
+    return match ? match[0] : null;
+  }
+
+  async querySubnetHotkey(netuid) {
+    const module = this.api.query.subtensorModule;
+    if (!module) return null;
+    for (const method of ['subnetOwner', 'subnetOwners', 'networkOwner', 'owner']) {
+      try {
+        if (!module[method]) continue;
+        const value = await module[method](netuid);
+        const hotkey = this.hotkeyFromEvent(value?.toHuman?.() || value?.toString?.());
+        if (hotkey) return { hotkey, source: `subtensorModule.${method}` };
+      } catch {}
+    }
+    for (const method of ['keys', 'hotkeys']) {
+      try {
+        if (!module[method]?.entries) continue;
+        const entries = await module[method].entries(netuid);
+        for (const [, value] of entries) {
+          const hotkey = this.hotkeyFromEvent(value?.toHuman?.() || value?.toString?.());
+          if (hotkey) return { hotkey, source: `subtensorModule.${method}` };
+        }
+      } catch {}
+    }
+    return null;
   }
 
   async refreshBalance(address) {

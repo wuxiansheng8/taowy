@@ -392,7 +392,7 @@ $('#manualBuyBtn').addEventListener('click', async () => {
       body: JSON.stringify({ netuid, sniper })
     });
     $('#sniperMsg').textContent = result.ok
-      ? `已触发 SN${netuid} 购买，启用钱包 ${result.activeWallets} 个`
+      ? `已触发 SN${netuid} 购买，hotkey ${shortAddress(result.hotkey)}，启用钱包 ${result.activeWallets} 个`
       : `未触发：${result.reason || '没有可用钱包'}`;
     await loadSettings();
   } catch (error) {
@@ -418,6 +418,12 @@ function collectSniperSettings(form) {
       return acc;
     }, {})
   };
+}
+
+function shortAddress(address) {
+  const text = String(address || '');
+  if (text.length <= 14) return text || '--';
+  return `${text.slice(0, 6)}...${text.slice(-6)}`;
 }
 
 async function saveSniperSettings(form) {
