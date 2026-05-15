@@ -11,14 +11,18 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 cd "${APP_DIR}"
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
-fi
 
-REPO="${GITHUB_REPO:-}"
+env_value() {
+  local key="$1"
+  if [[ ! -f .env ]]; then
+    return 0
+  fi
+  grep -m1 -E "^${key}=" .env \
+    | cut -d= -f2- \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+REPO="${GITHUB_REPO:-$(env_value GITHUB_REPO)}"
 if [[ -z "${REPO}" && -f data/config.json ]]; then
   REPO="$(node -e "const fs=require('fs');const c=JSON.parse(fs.readFileSync('data/config.json','utf8'));console.log(c.github?.repo||'')")"
 fi
@@ -40,7 +44,8 @@ if [[ -n "${TARBALL}" ]]; then
   mkdir -p "${TMP}/src"
   tar -xzf "${TMP}/latest.tar.gz" -C "${TMP}/src" --strip-components=1
 else
-  BRANCH="${GITHUB_BRANCH:-main}"
+  BRANCH="${GITHUB_BRANCH:-$(env_value GITHUB_BRANCH)}"
+  BRANCH="${BRANCH:-main}"
   git clone --depth 1 --branch "${BRANCH}" "https://github.com/${REPO}.git" "${TMP}/src"
 fi
 
