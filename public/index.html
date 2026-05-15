@@ -25,6 +25,7 @@
       </div>
       <nav>
         <button class="nav active" data-page="dashboard">总览</button>
+        <button class="nav" data-page="launches">新子网上线监控</button>
         <button class="nav" data-page="race">赛马/淘汰风险</button>
         <button class="nav" data-page="settings">系统设置</button>
         <button class="nav" data-page="logs">日志</button>
@@ -57,6 +58,16 @@
         </div>
         <div id="alertBox" class="alert hidden"></div>
         <div id="cards" class="cards"></div>
+      </section>
+
+      <section id="launchesPage" class="page">
+        <div class="risk-panel">
+          <h3>新子网上线记录</h3>
+          <table>
+            <thead><tr><th>发现时间</th><th>子网</th><th>名称</th><th>注册区块</th><th>发现区块</th><th>来源</th></tr></thead>
+            <tbody id="launchRows"></tbody>
+          </table>
+        </div>
       </section>
 
       <section id="racePage" class="page">

@@ -3,6 +3,7 @@ const state = { data: null, settings: null, logs: [], sort: 'netuid' };
 
 const pages = {
   dashboard: ['总览', $('#dashboardPage')],
+  launches: ['新子网上线监控', $('#launchesPage')],
   race: ['赛马/淘汰风险', $('#racePage')],
   settings: ['系统设置', $('#settingsPage')],
   logs: ['日志', $('#logsPage')]
@@ -112,6 +113,7 @@ function updateDashboard(data) {
     $('#alertBox').textContent = `最近提醒：区块 ${data.lastAlert.blockNumber} ${data.lastAlert.eventLabel || data.lastAlert.event}`;
   }
   renderCards(data.subnets || []);
+  renderLaunches(data.launches || []);
   renderRace(data.race || {});
 }
 
@@ -141,6 +143,20 @@ function sortSubnets(items, sort) {
     if (sort === 'volume24h') return num(b.volume24h, -1) - num(a.volume24h, -1) || num(a.netuid, 0) - num(b.netuid, 0);
     return num(a.netuid, 0) - num(b.netuid, 0);
   });
+}
+
+function renderLaunches(items) {
+  const rows = [...items].slice(0, 200);
+  $('#launchRows').innerHTML = rows.map((item) => `
+    <tr>
+      <td>${fmtTime(item.ts)}</td>
+      <td>SN${escapeHtml(item.netuid)}</td>
+      <td>${escapeHtml(item.name || '--')}</td>
+      <td>${item.registrationBlock ?? '--'}</td>
+      <td>${item.currentBlock ?? '--'}</td>
+      <td>${escapeHtml(item.source || '--')}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="6">暂无新子网上线记录</td></tr>';
 }
 
 function num(value, fallback) {

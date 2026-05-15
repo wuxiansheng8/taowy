@@ -35,6 +35,7 @@ const ZERO_STATE = {
     bjDate: beijingDateKey(Date.now()),
     recent: []
   },
+  launches: [],
   lastAlert: null,
   errors: []
 };
@@ -109,7 +110,7 @@ export class BittensorMonitor {
   async doRefresh(reason = '手动刷新') {
     try {
       const data = await this.collect();
-      this.applyCollected(data);
+      this.applyCollected(data, reason);
       this.logger.info(`${reason}完成`, {
         block: this.state.currentBlock,
         subnetCount: this.state.race.currentSubnetCount
@@ -131,7 +132,7 @@ export class BittensorMonitor {
     return data;
   }
 
-  applyCollected(data) {
+  applyCollected(data, reason = '采集') {
     if (!Array.isArray(data.subnets) || !data.subnets.length) {
       throw new Error('采集结果为空，保留上次快照');
     }
@@ -140,7 +141,7 @@ export class BittensorMonitor {
     const ranked = [...subnets].filter((s) => s.raceEligible).sort((a, b) => num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity));
     const immune = subnets.filter((s) => s.inImmunity).sort((a, b) => num(a.immunityEndsAtBlock, 0) - num(b.immunityEndsAtBlock, 0));
     const snapshot = buildSubnetSnapshot(subnets);
-    this.detectSubnetDiff(snapshot);
+    this.detectSubnetDiff(snapshot, reason, data.currentBlock || this.state.currentBlock);
     this.lastSubnetSnapshot = snapshot;
     this.state = {
       status: 'ok',
@@ -169,6 +170,7 @@ export class BittensorMonitor {
         }))
       },
       chainFlow: this.prunedChainFlow(),
+      launches: (this.state.launches || []).slice(0, 200),
       lastAlert: this.state.lastAlert,
       errors: this.state.errors.slice(-10)
     };
@@ -250,7 +252,7 @@ export class BittensorMonitor {
           this.persistState();
           await this.notifier.alert(`区块 ${blockNumber}：${translated.label}`, payload);
           this.emit('alert');
-          await this.verifySubnetList();
+          await this.verifySubnetList('新区块事件校验');
         } else {
           this.logger.info(`区块 ${blockNumber}：${translated.label}`, payload);
         }
@@ -350,16 +352,37 @@ export class BittensorMonitor {
     };
   }
 
-  async verifySubnetList() {
-    await this.refresh('subnet list 校验');
+  async verifySubnetList(reason = 'subnet list 校验') {
+    await this.refresh(reason);
   }
 
-  detectSubnetDiff(next) {
+  detectSubnetDiff(next, reason = '采集对比', currentBlock = null) {
     if (!this.lastSubnetSnapshot.size) return;
     const diff = diffSubnetSnapshots(this.lastSubnetSnapshot, next);
     if (diff.added.length || diff.removed.length || diff.changed.length) {
+      if (diff.added.length) this.recordLaunches(diff.added, reason, currentBlock);
       this.notifier.alert(formatSubnetDiffAlert(diff), diff).catch(() => {});
     }
+  }
+
+  recordLaunches(items, source, currentBlock) {
+    const existing = new Set((this.state.launches || []).map((item) => item.id));
+    const created = items.map((item) => {
+      const registrationBlock = nullableNumber(item.registrationBlock);
+      const id = `${item.netuid}-${registrationBlock ?? currentBlock ?? Date.now()}`;
+      return {
+        id,
+        ts: Date.now(),
+        source,
+        netuid: item.netuid,
+        name: item.name || `Subnet ${item.netuid}`,
+        registrationBlock,
+        currentBlock: nullableNumber(currentBlock)
+      };
+    }).filter((item) => !existing.has(item.id));
+    if (!created.length) return;
+    this.state.launches = [...created, ...(this.state.launches || [])].slice(0, 200);
+    this.logger.info('记录新子网上线', { launches: created.map((item) => ({ netuid: item.netuid, name: item.name, source: item.source })) });
   }
 
   recordError(error) {
