@@ -99,10 +99,11 @@ class Sniper {
     
     const amountTao = settings.amountTao || 1.0;
     const maxRetries = settings.maxRetries === 0 ? Infinity : (settings.maxRetries || 5);
-    const retryInterval = settings.retryIntervalMs || 500;
+    const retryInterval = settings.retryIntervalMs ?? 200;
+    const txTimeoutMs = settings.txTimeoutMs || 5000;
 
     Promise.all(activePairs.map(item =>
-      this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval)
+      this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs)
     )).catch(err => {
       this.logger.error(`[多钱包打新] 异常:`, err);
     });
@@ -111,7 +112,7 @@ class Sniper {
       .catch(() => {});
   }
 
-  async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval) {
+  async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs) {
     let attempts = 0;
     const amountBigInt = BigInt(Math.floor(amountTao * 1e9));
 
@@ -121,7 +122,7 @@ class Sniper {
         this.logger.info(`[打新] 钱包【${walletName}】尝试购买 #${netuid} (第 ${attempts} 次)...`);
 
         const tx = this.api.tx.subtensorModule.addStake(pair.address, netuid, amountBigInt);
-        const result = await this.sendTx(tx, pair);
+        const result = await this.sendTx(tx, pair, txTimeoutMs);
 
         if (result.success) {
           const msg = `[打新成功] 钱包: ${walletName}\n子网 #${netuid} 购买成功！\n耗时: 第 ${attempts} 次尝试\n交易哈希: ${result.hash}`;
@@ -157,7 +158,7 @@ class Sniper {
     return nextNonce;
   }
 
-  async sendTx(tx, pair) {
+  async sendTx(tx, pair, txTimeoutMs = 5000) {
     return new Promise((resolve) => {
       let unsubscribe = null;
       let settled = false;
@@ -175,7 +176,7 @@ class Sniper {
       const timeout = setTimeout(() => {
         this.refreshNonce(address).catch(() => {});
         finish({ success: false, error: '交易提交超时' });
-      }, 12000);
+      }, txTimeoutMs);
 
       tx.signAndSend(pair, options, ({ status, dispatchError }) => {
         if (status.isInBlock || status.isFinalized) {

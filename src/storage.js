@@ -43,6 +43,7 @@ export const defaultConfig = {
     maxSlippage: 10,
     maxRetries: 5,
     retryIntervalMs: 200,
+    txTimeoutMs: 5000,
     wallets: {} // 格式: { "address": { name: "备注", enabled: true } }
   }
 };

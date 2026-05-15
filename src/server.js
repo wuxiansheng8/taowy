@@ -217,6 +217,7 @@ function sanitizeSettings(current, body) {
     next.sniper.maxSlippage = clamp(body.sniper.maxSlippage, 0, 100, current.sniper.maxSlippage);
     next.sniper.maxRetries = clamp(body.sniper.maxRetries, 0, 1000, current.sniper.maxRetries);
     next.sniper.retryIntervalMs = clamp(body.sniper.retryIntervalMs, 0, 60000, current.sniper.retryIntervalMs);
+    next.sniper.txTimeoutMs = clamp(body.sniper.txTimeoutMs, 1000, 30000, current.sniper.txTimeoutMs || 5000);
 
     // 保存钱包备注和开关
     if (body.sniper.wallets) {

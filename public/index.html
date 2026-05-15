@@ -70,6 +70,7 @@
             <label>滑点限制 (%)<input name="sniperMaxSlippage" type="number" min="0" max="100"></label>
             <label>重试次数 (0为无限)<input name="sniperMaxRetries" type="number" min="0"></label>
             <label>重试间隔 (ms)<input name="sniperRetryIntervalMs" type="number" min="0"></label>
+            <label>交易超时 (ms)<input name="sniperTxTimeoutMs" type="number" min="1000" max="30000"></label>
           </div>
           <div id="sniperWalletList" class="api-list"></div>
           <button type="submit">保存自动打新设置</button>

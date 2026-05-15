@@ -218,6 +218,7 @@ function populateSniperForm(sniper = {}) {
   form.sniperMaxSlippage.value = sniper.maxSlippage ?? 10;
   form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
+  form.sniperTxTimeoutMs.value = sniper.txTimeoutMs ?? 5000;
   renderSniperWallets(sniper.walletList || []);
 }
 
@@ -339,6 +340,7 @@ $('#sniperForm').addEventListener('submit', async (event) => {
     maxSlippage: Number(form.sniperMaxSlippage.value),
     maxRetries: Number(form.sniperMaxRetries.value),
     retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
+    txTimeoutMs: Number(form.sniperTxTimeoutMs.value),
     wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
       acc[row.dataset.address] = {
         enabled: row.querySelector('[data-field="enabled"]').checked,
