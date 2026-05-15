@@ -21,13 +21,18 @@ class Sniper {
     if (notifier) this.notifier = notifier;
   }
 
-  async init(api) {
+  async init(api, { force = false } = {}) {
     if (this.isInitializing) return;
     this.isInitializing = true;
     try {
       this.api = api;
       const rawMnemonics = process.env.SNIPER_MNEMONIC;
       if (!rawMnemonics) {
+        if (force) {
+          this.walletMap.clear();
+          this.nextNonceByAddress.clear();
+          this.balanceByAddress.clear();
+        }
         this.logger.warn('未配置 SNIPER_MNEMONIC，自动打新功能将不可用');
         return;
       }
@@ -57,6 +62,12 @@ class Sniper {
     } finally {
       this.isInitializing = false;
     }
+  }
+
+  async reloadWallets() {
+    if (!this.api) throw new Error('链 API 尚未连接，无法刷新钱包');
+    await this.init(this.api, { force: true });
+    return this.getWalletsStatus();
   }
 
   // 获取当前所有钱包的状态（用于前端展示）

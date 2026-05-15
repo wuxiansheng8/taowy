@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppLogger } from './logger.js';
@@ -9,7 +10,7 @@ import { DwellirPool, extractDwellirApiKey, normalizeEndpoint } from './dwellirP
 import { BittensorMonitor } from './bittensorMonitor.js';
 import { Notifier } from './notifier.js';
 import { checkPassword, publicConfig, requireAuth } from './auth.js';
-import { loadConfig, saveConfig } from './storage.js';
+import { loadConfig, saveConfig, rootDir } from './storage.js';
 import { configureSniper, getSniper } from './sniper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,6 +148,13 @@ app.post('/api/telegram/test', requireAuth, async (req, res) => {
 
 app.post('/api/sniper/balances', requireAuth, async (req, res) => {
   const walletList = await getSniper().refreshAllBalances();
+  res.json({ ok: true, walletList });
+});
+
+app.post('/api/sniper/reload-wallets', requireAuth, async (req, res) => {
+  dotenv.config({ path: path.join(rootDir, '.env'), override: true });
+  const walletList = await getSniper().reloadWallets();
+  logger.info('自动打新钱包已手动刷新', { username: req.session.user.username, wallets: walletList.length });
   res.json({ ok: true, walletList });
 });
 

@@ -360,6 +360,21 @@ $('#refreshBalancesBtn').addEventListener('click', async () => {
   }
 });
 
+$('#reloadWalletsBtn').addEventListener('click', async () => {
+  const btn = $('#reloadWalletsBtn');
+  btn.disabled = true;
+  $('#sniperMsg').textContent = '正在重新读取 .env 钱包...';
+  try {
+    const result = await api('/api/sniper/reload-wallets', { method: 'POST', body: '{}' });
+    renderSniperWallets(result.walletList || []);
+    $('#sniperMsg').textContent = `钱包已刷新，识别到 ${(result.walletList || []).length} 个`;
+  } catch (error) {
+    $('#sniperMsg').textContent = error.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 $('#manualBuyBtn').addEventListener('click', async () => {
   const form = $('#sniperForm');
   const netuid = Number(form.manualNetuid.value);
