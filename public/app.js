@@ -1,5 +1,6 @@
 const $ = (sel) => document.querySelector(sel);
 const state = { data: null, settings: null, logs: [], sort: 'netuid' };
+let balanceRefreshTimer = null;
 
 const pages = {
   dashboard: ['总览', $('#dashboardPage')],
@@ -50,8 +51,10 @@ async function showApp() {
   es.addEventListener('alert', (ev) => updateDashboard(JSON.parse(ev.data)));
   es.addEventListener('flow', (ev) => updateDashboard(JSON.parse(ev.data)));
   es.addEventListener('log', (ev) => {
-    state.logs.push(JSON.parse(ev.data));
+    const entry = JSON.parse(ev.data);
+    state.logs.push(entry);
     renderLogs();
+    if (isSniperSuccessLog(entry)) scheduleBalanceRefresh();
   });
 }
 
@@ -363,8 +366,7 @@ $('#refreshBalancesBtn').addEventListener('click', async () => {
   btn.disabled = true;
   $('#sniperMsg').textContent = '正在检查余额...';
   try {
-    const result = await api('/api/sniper/balances', { method: 'POST', body: '{}' });
-    renderSniperWallets(result.walletList || []);
+    await refreshSniperBalances();
     $('#sniperMsg').textContent = '余额已更新';
   } catch (error) {
     $('#sniperMsg').textContent = error.message;
@@ -372,6 +374,28 @@ $('#refreshBalancesBtn').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+function isSniperSuccessLog(entry) {
+  return entry?.level === 'alert' && String(entry.message || '').includes('[打新成功]');
+}
+
+function scheduleBalanceRefresh() {
+  clearTimeout(balanceRefreshTimer);
+  balanceRefreshTimer = setTimeout(async () => {
+    try {
+      await refreshSniperBalances();
+      $('#sniperMsg').textContent = '交易成功，余额已自动刷新';
+    } catch (error) {
+      $('#sniperMsg').textContent = `交易成功，余额刷新失败：${error.message}`;
+    }
+  }, 3000);
+}
+
+async function refreshSniperBalances() {
+  const result = await api('/api/sniper/balances', { method: 'POST', body: '{}' });
+  renderSniperWallets(result.walletList || []);
+  return result.walletList || [];
+}
 
 $('#reloadWalletsBtn').addEventListener('click', async () => {
   const btn = $('#reloadWalletsBtn');
