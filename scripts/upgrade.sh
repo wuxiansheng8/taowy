@@ -37,22 +37,9 @@ cleanup() { rm -rf "${TMP}"; }
 trap cleanup EXIT
 
 echo "从 GitHub 拉取最新版本：${REPO}"
-LATEST_JSON=""
-RELEASE_STATUS="$(curl -sS -o "${TMP}/release.json" -w "%{http_code}" "https://api.github.com/repos/${REPO}/releases/latest" || true)"
-if [[ "${RELEASE_STATUS}" == "200" ]]; then
-  LATEST_JSON="$(cat "${TMP}/release.json")"
-fi
-TARBALL="$(node -e "const j=JSON.parse(process.argv[1]||'{}');console.log(j.tarball_url||'')" "${LATEST_JSON}")"
-
-if [[ -n "${TARBALL}" ]]; then
-  curl -fsSL "${TARBALL}" -o "${TMP}/latest.tar.gz"
-  mkdir -p "${TMP}/src"
-  tar -xzf "${TMP}/latest.tar.gz" -C "${TMP}/src" --strip-components=1
-else
-  BRANCH="${GITHUB_BRANCH:-$(env_value GITHUB_BRANCH)}"
-  BRANCH="${BRANCH:-main}"
-  git clone --depth 1 --branch "${BRANCH}" "https://github.com/${REPO}.git" "${TMP}/src"
-fi
+BRANCH="${GITHUB_BRANCH:-$(env_value GITHUB_BRANCH)}"
+BRANCH="${BRANCH:-main}"
+git clone --depth 1 --branch "${BRANCH}" "https://github.com/${REPO}.git" "${TMP}/src"
 
 echo "同步最新文件，保留 .env、data、node_modules、venv"
 rsync -a --delete \
