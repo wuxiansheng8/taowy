@@ -7,6 +7,7 @@ export const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 export const dataDir = path.join(rootDir, 'data');
 export const configPath = path.join(dataDir, 'config.json');
 export const statePath = path.join(dataDir, 'state.json');
+export const hotkeyCachePath = path.join(dataDir, 'hotkey-cache.json');
 
 const defaultHash = bcrypt.hashSync('admin123', 10);
 
@@ -94,4 +95,21 @@ export function saveState(state) {
   const tmp = `${statePath}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
   fs.renameSync(tmp, statePath);
+}
+
+export function loadHotkeyCache() {
+  ensureDataDir();
+  if (!fs.existsSync(hotkeyCachePath)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(hotkeyCachePath, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+export function saveHotkeyCache(cache) {
+  ensureDataDir();
+  const tmp = `${hotkeyCachePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(cache, null, 2), 'utf8');
+  fs.renameSync(tmp, hotkeyCachePath);
 }

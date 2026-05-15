@@ -1,5 +1,6 @@
 import { Keyring } from '@polkadot/api';
 import { cryptoWaitReady } from '@polkadot/util-crypto';
+import { loadHotkeyCache, saveHotkeyCache } from './storage.js';
 
 const HOTKEY_CACHE_TTL_MS = 60 * 60 * 1000;
 const HOTKEY_WARM_LIMIT = 30;
@@ -15,6 +16,7 @@ class Sniper {
     this.nextNonceByAddress = new Map();
     this.balanceByAddress = new Map();
     this.hotkeyByNetuid = new Map();
+    this.loadHotkeyCache();
     this.isInitializing = false;
     this.processedNetuids = new Set();
   }
@@ -104,6 +106,23 @@ class Sniper {
         updatedAt: cached?.updatedAt ? new Date(cached.updatedAt).toISOString() : null
       };
     });
+  }
+
+  loadHotkeyCache() {
+    const saved = loadHotkeyCache();
+    for (const [netuid, item] of Object.entries(saved || {})) {
+      if (!item?.hotkey || !item?.updatedAt) continue;
+      this.hotkeyByNetuid.set(Number(netuid), item);
+    }
+  }
+
+  saveHotkeyCache() {
+    const cache = {};
+    for (const [netuid, item] of this.hotkeyByNetuid.entries()) {
+      if (!item?.hotkey || !item?.updatedAt) continue;
+      cache[netuid] = item;
+    }
+    saveHotkeyCache(cache);
   }
 
   async onNewSubnet(netuid, name, eventData = null) {
@@ -236,6 +255,7 @@ class Sniper {
     if (resolved?.hotkey && await this.verifyHotkey(netuid, resolved.hotkey)) {
       const verified = { ...resolved, verified: true, updatedAt: Date.now() };
       this.hotkeyByNetuid.set(numericNetuid, verified);
+      this.saveHotkeyCache();
       this.logger.info(`子网 #${netuid} 自动选择 hotkey`, resolved);
       return verified;
     }
@@ -247,6 +267,7 @@ class Sniper {
     const cached = this.hotkeyByNetuid.get(numericNetuid);
     if (cached?.hotkey === hotkey) {
       this.hotkeyByNetuid.delete(numericNetuid);
+      this.saveHotkeyCache();
       this.logger.warn(`子网 #${netuid} hotkey 已失效并清除缓存`, { hotkey, reason });
     }
   }
