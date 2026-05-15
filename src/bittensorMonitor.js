@@ -172,7 +172,7 @@ export class BittensorMonitor {
         }))
       },
       chainFlow: this.prunedChainFlow(),
-      launches: (this.state.launches || []).slice(0, 200),
+      launches: (this.state.launches || []).slice(0, 10),
       lastAlert: this.state.lastAlert,
       errors: this.state.errors.slice(-10)
     };
@@ -399,7 +399,7 @@ export class BittensorMonitor {
       };
     }).filter((item) => !existing.has(item.id));
     if (!created.length) return;
-    this.state.launches = [...created, ...(this.state.launches || [])].slice(0, 200);
+    this.state.launches = [...created, ...(this.state.launches || [])].slice(0, 10);
     this.logger.info('记录新子网上线', { launches: created.map((item) => ({ netuid: item.netuid, name: item.name, source: item.source })) });
   }
 

@@ -146,7 +146,7 @@ function sortSubnets(items, sort) {
 }
 
 function renderLaunches(items) {
-  const rows = [...items].slice(0, 200);
+  const rows = [...items].slice(0, 10);
   $('#launchRows').innerHTML = rows.map((item) => `
     <tr>
       <td>${fmtTime(item.ts)}</td>
