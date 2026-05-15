@@ -3,7 +3,7 @@ const state = { data: null, settings: null, logs: [], sort: 'netuid' };
 
 const pages = {
   dashboard: ['总览', $('#dashboardPage')],
-  launches: ['新子网上线监控', $('#launchesPage')],
+  launches: ['新子网狙击抢跑', $('#launchesPage')],
   race: ['赛马/淘汰风险', $('#racePage')],
   settings: ['系统设置', $('#settingsPage')],
   logs: ['日志', $('#logsPage')]
@@ -206,14 +206,19 @@ async function loadSettings() {
   form.tgEnabled.checked = cfg.telegram.enabled;
   form.botToken.value = cfg.telegram.botToken;
   form.chatId.value = cfg.telegram.chatId;
-  form.sniperEnabled.checked = cfg.sniper.enabled;
-  form.sniperAmountTao.value = cfg.sniper.amountTao;
-  form.sniperMaxSlippage.value = cfg.sniper.maxSlippage;
-  form.sniperMaxRetries.value = cfg.sniper.maxRetries;
-  form.sniperRetryIntervalMs.value = cfg.sniper.retryIntervalMs;
-  renderSniperWallets(cfg.sniper.walletList || []);
   form.webUsername.value = cfg.auth.username;
+  populateSniperForm(cfg.sniper);
   renderApiRows(cfg.apiPool.keys || []);
+}
+
+function populateSniperForm(sniper = {}) {
+  const form = $('#sniperForm');
+  form.sniperEnabled.checked = Boolean(sniper.enabled);
+  form.sniperAmountTao.value = sniper.amountTao ?? 1;
+  form.sniperMaxSlippage.value = sniper.maxSlippage ?? 10;
+  form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
+  form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 500;
+  renderSniperWallets(sniper.walletList || []);
 }
 
 function renderApiRows(keys) {
@@ -312,20 +317,6 @@ $('#settingsForm').addEventListener('submit', async (event) => {
       botToken: form.botToken.value.trim(),
       chatId: form.chatId.value.trim()
     },
-    sniper: {
-      enabled: form.sniperEnabled.checked,
-      amountTao: Number(form.sniperAmountTao.value),
-      maxSlippage: Number(form.sniperMaxSlippage.value),
-      maxRetries: Number(form.sniperMaxRetries.value),
-      retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
-      wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
-        acc[row.dataset.address] = {
-          enabled: row.querySelector('[data-field="enabled"]').checked,
-          name: row.querySelector('[data-field="name"]').value.trim()
-        };
-        return acc;
-      }, {})
-    }
   };
   await api('/api/settings', { method: 'PUT', body: JSON.stringify(payload) });
   if (form.webPassword.value) {
@@ -336,6 +327,28 @@ $('#settingsForm').addEventListener('submit', async (event) => {
     form.webPassword.value = '';
   }
   $('#settingsMsg').textContent = '已保存';
+  await loadSettings();
+});
+
+$('#sniperForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const sniper = {
+    enabled: form.sniperEnabled.checked,
+    amountTao: Number(form.sniperAmountTao.value),
+    maxSlippage: Number(form.sniperMaxSlippage.value),
+    maxRetries: Number(form.sniperMaxRetries.value),
+    retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
+    wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
+      acc[row.dataset.address] = {
+        enabled: row.querySelector('[data-field="enabled"]').checked,
+        name: row.querySelector('[data-field="name"]').value.trim()
+      };
+      return acc;
+    }, {})
+  };
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({ sniper }) });
+  $('#sniperMsg').textContent = '已保存';
   await loadSettings();
 });
 
