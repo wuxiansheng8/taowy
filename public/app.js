@@ -206,12 +206,36 @@ async function loadSettings() {
   form.tgEnabled.checked = cfg.telegram.enabled;
   form.botToken.value = cfg.telegram.botToken;
   form.chatId.value = cfg.telegram.chatId;
+  form.sniperEnabled.checked = cfg.sniper.enabled;
+  form.sniperAmountTao.value = cfg.sniper.amountTao;
+  form.sniperMaxSlippage.value = cfg.sniper.maxSlippage;
+  form.sniperMaxRetries.value = cfg.sniper.maxRetries;
+  form.sniperRetryIntervalMs.value = cfg.sniper.retryIntervalMs;
+  renderSniperWallets(cfg.sniper.walletList || []);
   form.webUsername.value = cfg.auth.username;
   renderApiRows(cfg.apiPool.keys || []);
 }
 
 function renderApiRows(keys) {
   $('#apiList').innerHTML = keys.map((key, i) => apiRow(key, i)).join('');
+}
+
+function renderSniperWallets(wallets) {
+  const container = $('#sniperWalletList');
+  if (!container) return;
+  if (!wallets.length) {
+    container.innerHTML = '<p class="desc">未在 .env 中检测到钱包，请配置 SNIPER_MNEMONIC</p>';
+    return;
+  }
+  container.innerHTML = '<h4>已识别的打新钱包</h4>' + wallets.map(w => sniperWalletRow(w)).join('');
+}
+
+function sniperWalletRow(w) {
+  return `<div class="api-row sniper-wallet-row" data-address="${w.address}">
+    <label class="check"><input data-field="enabled" type="checkbox" ${w.enabled !== false ? 'checked' : ''}>启用</label>
+    <label>备注<input data-field="name" value="${escapeAttr(w.name || '')}" placeholder="小号 1"></label>
+    <label>地址<input readonly value="${w.address}" style="background:#f0f0f0;font-family:monospace;font-size:11px;"></label>
+  </div>`;
 }
 
 function apiRow(key, i) {
@@ -287,6 +311,20 @@ $('#settingsForm').addEventListener('submit', async (event) => {
       enabled: form.tgEnabled.checked,
       botToken: form.botToken.value.trim(),
       chatId: form.chatId.value.trim()
+    },
+    sniper: {
+      enabled: form.sniperEnabled.checked,
+      amountTao: Number(form.sniperAmountTao.value),
+      maxSlippage: Number(form.sniperMaxSlippage.value),
+      maxRetries: Number(form.sniperMaxRetries.value),
+      retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
+      wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
+        acc[row.dataset.address] = {
+          enabled: row.querySelector('[data-field="enabled"]').checked,
+          name: row.querySelector('[data-field="name"]').value.trim()
+        };
+        return acc;
+      }, {})
     }
   };
   await api('/api/settings', { method: 'PUT', body: JSON.stringify(payload) });

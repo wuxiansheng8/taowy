@@ -36,6 +36,14 @@ export const defaultConfig = {
   github: {
     repo: process.env.GITHUB_REPO || '',
     branch: 'main'
+  },
+  sniper: {
+    enabled: false,
+    amountTao: 1.0,
+    maxSlippage: 10,
+    maxRetries: 5,
+    retryIntervalMs: 500,
+    wallets: {} // 格式: { "address": { name: "备注", enabled: true } }
   }
 };
 

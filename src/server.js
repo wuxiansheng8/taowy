@@ -10,6 +10,7 @@ import { BittensorMonitor } from './bittensorMonitor.js';
 import { Notifier } from './notifier.js';
 import { checkPassword, publicConfig, requireAuth } from './auth.js';
 import { loadConfig, saveConfig } from './storage.js';
+import { configureSniper } from './sniper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '..', 'public');
@@ -18,6 +19,7 @@ const logger = new AppLogger();
 const getConfig = () => config;
 const pool = new DwellirPool(getConfig, logger);
 const notifier = new Notifier(getConfig, logger);
+configureSniper({ getConfig, logger, notifier });
 const monitor = new BittensorMonitor({ pool, getConfig, logger, notifier });
 const app = express();
 
@@ -31,13 +33,31 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 }
 }));
 
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 8;
+const LOGIN_BASE_DELAY_MS = 400;
+const LOGIN_MAX_DELAY_MS = 5000;
+
 app.post('/api/login', async (req, res) => {
-  const ok = await checkPassword(config, req.body.username, req.body.password);
+  const body = req.body || {};
+  const key = loginAttemptKey(req);
+  const attempt = getLoginAttempt(key);
+  if (attempt.lockedUntil > Date.now()) {
+    await sleep(LOGIN_MAX_DELAY_MS);
+    res.status(429).json({ error: '登录失败次数过多，请稍后再试' });
+    return;
+  }
+
+  const ok = await checkPassword(config, body.username, body.password);
   if (!ok) {
-    logger.warn('网页登录失败', { username: req.body.username });
+    const failures = recordLoginFailure(key);
+    await sleep(loginFailureDelay(failures));
+    logger.warn('网页登录失败', { username: body.username });
     res.status(401).json({ error: '账号或密码错误' });
     return;
   }
+  clearLoginAttempt(key);
   req.session.user = { username: config.auth.username };
   res.json({ ok: true, user: req.session.user });
 });
@@ -191,6 +211,24 @@ function sanitizeSettings(current, body) {
     next.github.repo = body.github.repo || current.github.repo;
     next.github.branch = body.github.branch || current.github.branch || 'main';
   }
+  if (body.sniper) {
+    next.sniper.enabled = Boolean(body.sniper.enabled);
+    next.sniper.amountTao = clamp(body.sniper.amountTao, 0.001, 10000, current.sniper.amountTao);
+    next.sniper.maxSlippage = clamp(body.sniper.maxSlippage, 0, 100, current.sniper.maxSlippage);
+    next.sniper.maxRetries = clamp(body.sniper.maxRetries, 0, 1000, current.sniper.maxRetries);
+    next.sniper.retryIntervalMs = clamp(body.sniper.retryIntervalMs, 0, 60000, current.sniper.retryIntervalMs);
+
+    // 保存钱包备注和开关
+    if (body.sniper.wallets) {
+      next.sniper.wallets = {};
+      for (const [addr, w] of Object.entries(body.sniper.wallets)) {
+        next.sniper.wallets[addr] = {
+          name: String(w.name || '').trim(),
+          enabled: w.enabled !== false
+        };
+      }
+    }
+  }
   return next;
 }
 
@@ -198,4 +236,42 @@ function clamp(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+function loginAttemptKey(req) {
+  const username = String(req.body?.username || '').trim().toLowerCase();
+  return `${req.ip || req.socket?.remoteAddress || 'unknown'}:${username}`;
+}
+
+function getLoginAttempt(key) {
+  const now = Date.now();
+  const attempt = loginAttempts.get(key);
+  if (!attempt || attempt.resetAt <= now) {
+    const fresh = { failures: 0, resetAt: now + LOGIN_WINDOW_MS, lockedUntil: 0 };
+    loginAttempts.set(key, fresh);
+    return fresh;
+  }
+  return attempt;
+}
+
+function recordLoginFailure(key) {
+  const attempt = getLoginAttempt(key);
+  attempt.failures += 1;
+  if (attempt.failures >= LOGIN_MAX_FAILURES) {
+    attempt.lockedUntil = Date.now() + LOGIN_WINDOW_MS;
+  }
+  return attempt.failures;
+}
+
+function clearLoginAttempt(key) {
+  loginAttempts.delete(key);
+}
+
+function loginFailureDelay(failures) {
+  const exponentialDelay = LOGIN_BASE_DELAY_MS * (2 ** Math.max(0, failures - 1));
+  return Math.min(LOGIN_MAX_DELAY_MS, exponentialDelay);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
 
+import { getSniper } from './sniper.js';
+
 export function requireAuth(req, res, next) {
   if (req.session?.user) return next();
   res.status(401).json({ error: '未登录' });
@@ -28,6 +30,10 @@ export function publicConfig(config) {
       chatId: config.telegram.chatId || ''
     },
     github: config.github,
+    sniper: {
+      ...config.sniper,
+      walletList: getSniper().getWalletsStatus()
+    },
     auth: { username: config.auth.username }
   };
 }

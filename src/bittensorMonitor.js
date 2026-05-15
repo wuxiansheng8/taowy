@@ -2,6 +2,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { PythonCollector } from './pythonCollector.js';
 import { blocksToDuration } from './time.js';
 import { loadState, saveState } from './storage.js';
+import { getSniper } from './sniper.js';
 
 const STATE_VERSION = 3;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
@@ -218,6 +219,10 @@ export class BittensorMonitor {
     const endpoint = this.pool.nextWsEndpoint();
     const provider = new WsProvider(endpoint, 5000);
     this.api = await ApiPromise.create({ provider, throwOnConnect: false });
+
+    // 初始化打新钱包
+    getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
+
     await this.api.rpc.chain.subscribeNewHeads(async (header) => {
       const blockNumber = header.number.toNumber();
       this.state.currentBlock = blockNumber;
@@ -252,6 +257,15 @@ export class BittensorMonitor {
           this.persistState();
           await this.notifier.alert(`区块 ${blockNumber}：${translated.label}`, payload);
           this.emit('alert');
+
+          // 触发自动打新
+          if (/SubnetAdded|NetworkAdded/i.test(method)) {
+            const netuid = eventNumber(event.data, 0, 'netuid');
+            if (netuid !== null) {
+              getSniper().onNewSubnet(netuid, `Subnet ${netuid}`);
+            }
+          }
+
           await this.verifySubnetList('新区块事件校验');
         } else {
           this.logger.info(`区块 ${blockNumber}：${translated.label}`, payload);
@@ -370,6 +384,10 @@ export class BittensorMonitor {
     const created = items.map((item) => {
       const registrationBlock = nullableNumber(item.registrationBlock);
       const id = `${item.netuid}-${registrationBlock ?? currentBlock ?? Date.now()}`;
+
+      // 触发自动打新 (如果是通过对比快照发现的)
+      getSniper().onNewSubnet(item.netuid, item.name);
+
       return {
         id,
         ts: Date.now(),
