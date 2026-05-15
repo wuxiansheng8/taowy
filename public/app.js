@@ -240,8 +240,15 @@ function sniperWalletRow(w) {
   return `<div class="api-row sniper-wallet-row" data-address="${w.address}">
     <label class="check"><input data-field="enabled" type="checkbox" ${w.enabled !== false ? 'checked' : ''}>启用</label>
     <label>备注<input data-field="name" value="${escapeAttr(w.name || '')}" placeholder="小号 1"></label>
+    <label>可用余额<input readonly value="${formatWalletBalance(w.freeTao)}" style="background:#f0f0f0;"></label>
     <label>地址<input readonly value="${w.address}" style="background:#f0f0f0;font-family:monospace;font-size:11px;"></label>
   </div>`;
+}
+
+function formatWalletBalance(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '查询中';
+  return `${n.toLocaleString('zh-CN', { maximumFractionDigits: 6 })} TAO`;
 }
 
 function apiRow(key, i) {

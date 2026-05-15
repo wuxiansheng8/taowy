@@ -10,6 +10,7 @@ class Sniper {
     this.keyring = null;
     this.walletMap = new Map();
     this.nextNonceByAddress = new Map();
+    this.balanceByAddress = new Map();
     this.isInitializing = false;
     this.processedNetuids = new Set();
   }
@@ -32,11 +33,12 @@ class Sniper {
       }
 
       const mnemonics = rawMnemonics.split(',').map(m => m.trim()).filter(Boolean);
-      
+
       await cryptoWaitReady();
       this.keyring = new Keyring({ type: 'sr25519' });
       this.walletMap.clear();
       this.nextNonceByAddress.clear();
+      this.balanceByAddress.clear();
 
       for (const m of mnemonics) {
         try {
@@ -48,7 +50,7 @@ class Sniper {
         }
       }
 
-      await Promise.allSettled(Array.from(this.walletMap.keys()).map((address) => this.refreshNonce(address)));
+      await Promise.allSettled(Array.from(this.walletMap.keys()).map((address) => this.refreshWalletState(address)));
       this.logger.info(`共加载 ${this.walletMap.size} 个可用打新钱包`);
     } catch (error) {
       this.logger.error('初始化自动打新钱包失败:', error);
@@ -61,13 +63,17 @@ class Sniper {
   getWalletsStatus() {
     const config = this.getConfig();
     const walletSettings = config.sniper?.wallets || {};
-    
+    this.refreshBalancesSoon();
+
     return Array.from(this.walletMap.keys()).map(address => {
       const setting = walletSettings[address] || {};
+      const balance = this.balanceByAddress.get(address);
       return {
         address,
         name: setting.name || '',
-        enabled: setting.enabled !== false // 默认启用
+        enabled: setting.enabled !== false, // 默认启用
+        freeTao: balance?.freeTao ?? null,
+        balanceUpdatedAt: balance?.updatedAt ?? null
       };
     });
   }
@@ -82,12 +88,24 @@ class Sniper {
 
     const activePairs = [];
     const walletSettings = settings.wallets || {};
+    const amountTao = settings.amountTao || 1.0;
+    const maxRetries = settings.maxRetries === 0 ? Infinity : (settings.maxRetries || 5);
+    const retryInterval = settings.retryIntervalMs ?? 200;
+    const txTimeoutMs = settings.txTimeoutMs || 5000;
 
     for (const [address, data] of this.walletMap.entries()) {
       const setting = walletSettings[address] || {};
-      if (setting.enabled !== false) {
-        activePairs.push({ pair: data.pair, name: setting.name || address.slice(-4) });
+      if (setting.enabled === false) continue;
+      const balance = this.balanceByAddress.get(address);
+      if (balance && Number.isFinite(balance.freeTao) && balance.freeTao < amountTao) {
+        this.logger.warn(`钱包【${setting.name || address.slice(-4)}】可用余额不足，跳过打新`, {
+          address,
+          freeTao: balance.freeTao,
+          amountTao
+        });
+        continue;
       }
+      activePairs.push({ pair: data.pair, name: setting.name || address.slice(-4) });
     }
 
     if (activePairs.length === 0) {
@@ -96,11 +114,6 @@ class Sniper {
     }
 
     this.logger.info(`[多钱包打新] 检测到新子网 #${netuid} (${name || '未知'})，启动 ${activePairs.length} 个钱包并发购买...`);
-    
-    const amountTao = settings.amountTao || 1.0;
-    const maxRetries = settings.maxRetries === 0 ? Infinity : (settings.maxRetries || 5);
-    const retryInterval = settings.retryIntervalMs ?? 200;
-    const txTimeoutMs = settings.txTimeoutMs || 5000;
 
     Promise.all(activePairs.map(item =>
       this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs)
@@ -136,7 +149,7 @@ class Sniper {
         const isLast = attempts > maxRetries;
         const errorMsg = error.message || String(error);
         this.logger.error(`[打新失败] 钱包【${walletName}】子网 #${netuid} 第 ${attempts} 次尝试失败: ${errorMsg}`);
-        
+
         if (isLast) break;
         await new Promise(resolve => setTimeout(resolve, retryInterval));
       }
@@ -149,6 +162,33 @@ class Sniper {
     const nextNonce = Number(nonce.toString());
     this.nextNonceByAddress.set(address, nextNonce);
     return nextNonce;
+  }
+
+  async refreshBalance(address) {
+    if (!this.api) return null;
+    const account = await this.api.query.system.account(address);
+    const freePlanck = BigInt(account.data.free.toString());
+    const freeTao = Number(freePlanck) / 1e9;
+    const balance = { freeTao, updatedAt: new Date().toISOString() };
+    this.balanceByAddress.set(address, balance);
+    return balance;
+  }
+
+  async refreshWalletState(address) {
+    const [nonce] = await Promise.allSettled([
+      this.refreshNonce(address),
+      this.refreshBalance(address)
+    ]);
+    return nonce.status === 'fulfilled' ? nonce.value : null;
+  }
+
+  refreshBalancesSoon() {
+    if (!this.api) return;
+    for (const address of this.walletMap.keys()) {
+      const cached = this.balanceByAddress.get(address);
+      if (cached && Date.now() - Date.parse(cached.updatedAt) < 10000) continue;
+      this.refreshBalance(address).catch(() => {});
+    }
   }
 
   reserveNonce(address) {
@@ -180,7 +220,7 @@ class Sniper {
 
       tx.signAndSend(pair, options, ({ status, dispatchError }) => {
         if (status.isInBlock || status.isFinalized) {
-          this.refreshNonce(address).catch(() => {});
+          this.refreshWalletState(address).catch(() => {});
           if (dispatchError) {
             let errorInfo = dispatchError.toString();
             if (dispatchError.isModule) {
