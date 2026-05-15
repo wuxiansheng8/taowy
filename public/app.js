@@ -264,7 +264,7 @@ function renderHotkeyCache(items) {
       <td>${item.updatedAt ? fmtTime(item.updatedAt) : '--'}</td>
     </tr>
   `).join('');
-  $('#hotkeyRows').innerHTML = rows || '<tr><td colspan="4">暂无 Hotkey 缓存</td></tr>';
+  $('#hotkeyRows').innerHTML = rows || '<tr><td colspan="4">暂无验证者缓存</td></tr>';
 }
 
 function apiRow(key, i) {
