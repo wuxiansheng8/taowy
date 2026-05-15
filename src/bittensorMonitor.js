@@ -4,7 +4,7 @@ import { blocksToDuration } from './time.js';
 import { loadState, saveState } from './storage.js';
 import { getSniper } from './sniper.js';
 
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
 
 const ZERO_STATE = {
@@ -240,7 +240,7 @@ export class BittensorMonitor {
   }
 
   async handleEvents(blockNumber, events) {
-    for (const record of events) {
+    for (const [index, record] of events.entries()) {
       const { event } = record;
       const section = event.section || '';
       const method = event.method || '';
@@ -274,7 +274,7 @@ export class BittensorMonitor {
       if (/^subtensor(Module)?$/i.test(section) && /^(StakeAdded|StakeRemoved|StakeSwapped)$/i.test(method)) {
         const human = event.data?.toHuman?.() || event.data?.toString?.();
         const raw = event.data?.toJSON?.() || human;
-        const flow = flowFromStakeEvent(method, raw);
+        const flow = flowFromStakeEvent(method, raw, events, index);
         if (flow) {
           this.state.chainFlow.recent.push({
             ts: Date.now(),
@@ -301,7 +301,7 @@ export class BittensorMonitor {
     this.state = {
       ...structuredClone(ZERO_STATE),
       ...saved.state,
-      chainFlow: this.prunedChainFlowFrom(saved.state.chainFlow),
+      chainFlow: saved.version === STATE_VERSION ? this.prunedChainFlowFrom(saved.state.chainFlow) : structuredClone(ZERO_STATE.chainFlow),
       errors: []
     };
     this.lastSubnetSnapshot = buildSubnetSnapshot(this.state.subnets || []);
@@ -478,16 +478,18 @@ function translateSubtensorEvent(method, fallback) {
   return { label: fallback, lifecycle: false };
 }
 
-function flowFromStakeEvent(method, data) {
+function flowFromStakeEvent(method, data, blockEvents = [], eventIndex = -1) {
   const name = String(method || '');
   if (/^StakeAdded$/i.test(name)) {
     const netuid = eventNumber(data, 4, 'netuid');
     if (isRootNetuid(netuid)) return null;
+    if (hasNearbyStakeSwap(blockEvents, eventIndex, netuid, 0)) return null;
     return buildFlow('stake', eventTao(data, 2, 'tao_amount'), netuid);
   }
   if (/^StakeRemoved$/i.test(name)) {
     const netuid = eventNumber(data, 4, 'netuid');
     if (isRootNetuid(netuid)) return null;
+    if (hasNearbyStakeSwap(blockEvents, eventIndex, netuid, 0)) return null;
     return buildFlow('unstake', eventTao(data, 2, 'tao_amount'), netuid);
   }
   if (/^StakeSwapped$/i.test(name)) {
@@ -502,6 +504,21 @@ function flowFromStakeEvent(method, data) {
     }
   }
   return null;
+}
+
+function hasNearbyStakeSwap(blockEvents, eventIndex, origin, destination) {
+  const start = Math.max(0, eventIndex - 3);
+  const end = Math.min(blockEvents.length - 1, eventIndex + 3);
+  for (let i = start; i <= end; i++) {
+    if (i === eventIndex) continue;
+    const event = blockEvents[i]?.event;
+    if (!event || !/^subtensor(Module)?$/i.test(event.section) || !/^StakeSwapped$/i.test(event.method)) continue;
+    const data = event.data?.toJSON?.() || event.data?.toHuman?.() || event.data?.toString?.();
+    if (eventNumber(data, 2, 'origin_netuid') === Number(origin) && eventNumber(data, 3, 'destination_netuid') === Number(destination)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function buildFlow(flowType, amountTao, netuid) {
@@ -523,7 +540,7 @@ function eventTao(data, index, key) {
   const raw = eventValue(data, index, key);
   const n = parseNumeric(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
-  return n > 1e6 ? n / 1e9 : n;
+  return n / 1e9;
 }
 
 function eventNumber(data, index, key) {
