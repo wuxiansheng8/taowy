@@ -340,8 +340,55 @@ $('#settingsForm').addEventListener('submit', async (event) => {
 
 $('#sniperForm').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const form = event.currentTarget;
-  const sniper = {
+  await saveSniperSettings(event.currentTarget);
+  $('#sniperMsg').textContent = '已保存';
+  await loadSettings();
+});
+
+$('#refreshBalancesBtn').addEventListener('click', async () => {
+  const btn = $('#refreshBalancesBtn');
+  btn.disabled = true;
+  $('#sniperMsg').textContent = '正在检查余额...';
+  try {
+    const result = await api('/api/sniper/balances', { method: 'POST', body: '{}' });
+    renderSniperWallets(result.walletList || []);
+    $('#sniperMsg').textContent = '余额已更新';
+  } catch (error) {
+    $('#sniperMsg').textContent = error.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#manualBuyBtn').addEventListener('click', async () => {
+  const form = $('#sniperForm');
+  const netuid = Number(form.manualNetuid.value);
+  if (!Number.isInteger(netuid) || netuid < 1 || netuid > 128) {
+    $('#sniperMsg').textContent = '请输入 1-128 的子网编号';
+    return;
+  }
+  const btn = $('#manualBuyBtn');
+  btn.disabled = true;
+  $('#sniperMsg').textContent = `正在保存设置并购买 SN${netuid}...`;
+  try {
+    const sniper = collectSniperSettings(form);
+    const result = await api('/api/sniper/buy', {
+      method: 'POST',
+      body: JSON.stringify({ netuid, sniper })
+    });
+    $('#sniperMsg').textContent = result.ok
+      ? `已触发 SN${netuid} 购买，启用钱包 ${result.activeWallets} 个`
+      : `未触发：${result.reason || '没有可用钱包'}`;
+    await loadSettings();
+  } catch (error) {
+    $('#sniperMsg').textContent = error.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function collectSniperSettings(form) {
+  return {
     enabled: form.sniperEnabled.checked,
     amountTao: Number(form.sniperAmountTao.value),
     maxSlippage: Number(form.sniperMaxSlippage.value),
@@ -356,10 +403,11 @@ $('#sniperForm').addEventListener('submit', async (event) => {
       return acc;
     }, {})
   };
-  await api('/api/settings', { method: 'PUT', body: JSON.stringify({ sniper }) });
-  $('#sniperMsg').textContent = '已保存';
-  await loadSettings();
-});
+}
+
+async function saveSniperSettings(form) {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({ sniper: collectSniperSettings(form) }) });
+}
 
 async function loadLogs() {
   const q = encodeURIComponent($('#logSearch').value || '');

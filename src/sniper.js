@@ -79,14 +79,36 @@ class Sniper {
   }
 
   async onNewSubnet(netuid, name) {
+    return this.executeSubnetBuy(netuid, name, {
+      requireEnabled: true,
+      dedupe: true,
+      label: '多钱包打新',
+      triggerText: '多钱包打新触发'
+    });
+  }
+
+  async buySubnet(netuid, name = null) {
+    return this.executeSubnetBuy(netuid, name || `Subnet ${netuid}`, {
+      requireEnabled: false,
+      dedupe: false,
+      label: '手动指定购买',
+      triggerText: '手动指定购买触发',
+      refreshBalances: true
+    });
+  }
+
+  async executeSubnetBuy(netuid, name, options = {}) {
+    if (!this.api) throw new Error('链 API 尚未连接，无法发起购买');
     const config = this.getConfig();
     const settings = config.sniper;
 
-    if (!settings?.enabled) return;
-    if (this.processedNetuids.has(netuid)) return;
-    this.processedNetuids.add(netuid);
+    if (options.requireEnabled && !settings?.enabled) return { ok: false, skipped: true, reason: '自动打新未启用' };
+    if (options.dedupe && this.processedNetuids.has(netuid)) return { ok: false, skipped: true, reason: '子网已处理' };
+    if (options.dedupe) this.processedNetuids.add(netuid);
+    if (options.refreshBalances) await this.refreshAllBalances();
 
     const activePairs = [];
+    const skippedWallets = [];
     const walletSettings = settings.wallets || {};
     const amountTao = settings.amountTao || 1.0;
     const maxRetries = settings.maxRetries === 0 ? Infinity : (settings.maxRetries || 5);
@@ -98,6 +120,7 @@ class Sniper {
       if (setting.enabled === false) continue;
       const balance = this.balanceByAddress.get(address);
       if (balance && Number.isFinite(balance.freeTao) && balance.freeTao < amountTao) {
+        skippedWallets.push({ address, name: setting.name || address.slice(-4), freeTao: balance.freeTao, reason: '余额不足' });
         this.logger.warn(`钱包【${setting.name || address.slice(-4)}】可用余额不足，跳过打新`, {
           address,
           freeTao: balance.freeTao,
@@ -109,20 +132,21 @@ class Sniper {
     }
 
     if (activePairs.length === 0) {
-      this.logger.warn(`检测到新子网 #${netuid}，但没有已启用的打新钱包`);
-      return;
+      this.logger.warn(`检测到子网 #${netuid}，但没有可用钱包`);
+      return { ok: false, skipped: true, reason: '没有可用钱包', skippedWallets };
     }
 
-    this.logger.info(`[多钱包打新] 检测到新子网 #${netuid} (${name || '未知'})，启动 ${activePairs.length} 个钱包并发购买...`);
+    this.logger.info(`[${options.label || '打新'}] 检测到子网 #${netuid} (${name || '未知'})，启动 ${activePairs.length} 个钱包并发购买...`);
 
     Promise.all(activePairs.map(item =>
       this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs)
     )).catch(err => {
-      this.logger.error(`[多钱包打新] 异常:`, err);
+      this.logger.error(`[${options.label || '打新'}] 异常:`, err);
     });
 
-    this.notifier.alert(`[多钱包打新触发] 检测到新子网 #${netuid}\n开启钱包: ${activePairs.length} 个\n每单金额: ${amountTao} TAO`, { netuid })
+    this.notifier.alert(`[${options.triggerText || '打新触发'}] 子网 #${netuid}\n开启钱包: ${activePairs.length} 个\n每单金额: ${amountTao} TAO`, { netuid })
       .catch(() => {});
+    return { ok: true, netuid, activeWallets: activePairs.length, skippedWallets };
   }
 
   async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs) {
@@ -180,6 +204,11 @@ class Sniper {
       this.refreshBalance(address)
     ]);
     return nonce.status === 'fulfilled' ? nonce.value : null;
+  }
+
+  async refreshAllBalances() {
+    await Promise.allSettled(Array.from(this.walletMap.keys()).map((address) => this.refreshWalletState(address)));
+    return this.getWalletsStatus();
   }
 
   refreshBalancesSoon() {

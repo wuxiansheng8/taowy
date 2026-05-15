@@ -10,7 +10,7 @@ import { BittensorMonitor } from './bittensorMonitor.js';
 import { Notifier } from './notifier.js';
 import { checkPassword, publicConfig, requireAuth } from './auth.js';
 import { loadConfig, saveConfig } from './storage.js';
-import { configureSniper } from './sniper.js';
+import { configureSniper, getSniper } from './sniper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '..', 'public');
@@ -143,6 +143,26 @@ app.post('/api/telegram/test', requireAuth, async (req, res) => {
   }
   logger.info('Telegram 测试推送已发送', { username: req.session.user.username });
   res.json({ ok: true });
+});
+
+app.post('/api/sniper/balances', requireAuth, async (req, res) => {
+  const walletList = await getSniper().refreshAllBalances();
+  res.json({ ok: true, walletList });
+});
+
+app.post('/api/sniper/buy', requireAuth, async (req, res) => {
+  if (req.body?.sniper) {
+    config = sanitizeSettings(config, { sniper: req.body.sniper });
+    saveConfig(config);
+  }
+  const netuid = Number(req.body?.netuid);
+  if (!Number.isInteger(netuid) || netuid < 1 || netuid > 128) {
+    res.status(400).json({ error: '请输入 1-128 的子网编号' });
+    return;
+  }
+  const result = await getSniper().buySubnet(netuid, `Subnet ${netuid}`);
+  logger.info('手动指定子网购买已触发', { username: req.session.user.username, netuid, result });
+  res.json(result);
 });
 
 app.get('/api/events', requireAuth, (req, res) => {
