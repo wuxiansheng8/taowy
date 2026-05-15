@@ -253,18 +253,17 @@ export class BittensorMonitor {
           data: event.data?.toHuman?.() || event.data?.toString?.()
         };
         if (translated.lifecycle) {
-          this.state.lastAlert = payload;
-          this.persistState();
-          await this.notifier.alert(`区块 ${blockNumber}：${translated.label}`, payload);
-          this.emit('alert');
-
-          // 触发自动打新
           if (/SubnetAdded|NetworkAdded/i.test(method)) {
             const netuid = eventNumber(event.data, 0, 'netuid');
             if (netuid !== null) {
               getSniper().onNewSubnet(netuid, `Subnet ${netuid}`);
             }
           }
+
+          this.state.lastAlert = payload;
+          this.persistState();
+          this.notifier.alert(`区块 ${blockNumber}：${translated.label}`, payload).catch(() => {});
+          this.emit('alert');
 
           await this.verifySubnetList('新区块事件校验');
         } else {

@@ -217,7 +217,7 @@ function populateSniperForm(sniper = {}) {
   form.sniperAmountTao.value = sniper.amountTao ?? 1;
   form.sniperMaxSlippage.value = sniper.maxSlippage ?? 10;
   form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
-  form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 500;
+  form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
   renderSniperWallets(sniper.walletList || []);
 }
 

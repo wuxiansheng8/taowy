@@ -42,7 +42,7 @@ export const defaultConfig = {
     amountTao: 1.0,
     maxSlippage: 10,
     maxRetries: 5,
-    retryIntervalMs: 500,
+    retryIntervalMs: 200,
     wallets: {} // 格式: { "address": { name: "备注", enabled: true } }
   }
 };
