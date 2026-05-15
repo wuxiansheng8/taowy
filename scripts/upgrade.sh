@@ -36,7 +36,11 @@ cleanup() { rm -rf "${TMP}"; }
 trap cleanup EXIT
 
 echo "从 GitHub 拉取最新版本：${REPO}"
-LATEST_JSON="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" || true)"
+LATEST_JSON=""
+RELEASE_STATUS="$(curl -sS -o "${TMP}/release.json" -w "%{http_code}" "https://api.github.com/repos/${REPO}/releases/latest" || true)"
+if [[ "${RELEASE_STATUS}" == "200" ]]; then
+  LATEST_JSON="$(cat "${TMP}/release.json")"
+fi
 TARBALL="$(node -e "const j=JSON.parse(process.argv[1]||'{}');console.log(j.tarball_url||'')" "${LATEST_JSON}")"
 
 if [[ -n "${TARBALL}" ]]; then
