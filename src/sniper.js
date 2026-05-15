@@ -93,6 +93,19 @@ class Sniper {
     });
   }
 
+  getHotkeyCacheStatus(maxNetuid = 128) {
+    return Array.from({ length: maxNetuid }, (_, index) => {
+      const netuid = index + 1;
+      const cached = this.hotkeyByNetuid.get(netuid);
+      return {
+        netuid,
+        hotkey: cached?.hotkey || '',
+        source: cached?.source || '',
+        updatedAt: cached?.updatedAt ? new Date(cached.updatedAt).toISOString() : null
+      };
+    });
+  }
+
   async onNewSubnet(netuid, name, eventData = null) {
     return this.executeSubnetBuy(netuid, name, {
       requireEnabled: true,

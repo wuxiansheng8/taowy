@@ -220,6 +220,7 @@ function populateSniperForm(sniper = {}) {
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
   form.sniperTxTimeoutMs.value = sniper.txTimeoutMs ?? 5000;
   renderSniperWallets(sniper.walletList || []);
+  renderHotkeyCache(sniper.hotkeyCache || []);
 }
 
 function renderApiRows(keys) {
@@ -249,6 +250,18 @@ function formatWalletBalance(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '查询中';
   return `${n.toLocaleString('zh-CN', { maximumFractionDigits: 6 })} TAO`;
+}
+
+function renderHotkeyCache(items) {
+  const rows = (items || []).map((item) => `
+    <tr>
+      <td>SN${item.netuid}</td>
+      <td class="mono">${item.hotkey ? escapeHtml(item.hotkey) : '--'}</td>
+      <td>${escapeHtml(item.source || '--')}</td>
+      <td>${item.updatedAt ? fmtTime(item.updatedAt) : '--'}</td>
+    </tr>
+  `).join('');
+  $('#hotkeyRows').innerHTML = rows || '<tr><td colspan="4">暂无 Hotkey 缓存</td></tr>';
 }
 
 function apiRow(key, i) {

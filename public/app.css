@@ -293,6 +293,10 @@ th, td {
   text-align: left;
 }
 th { color: var(--muted); font-weight: 600; }
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
 .settings {
   display: grid;
   gap: 16px;

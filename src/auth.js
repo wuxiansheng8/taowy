@@ -32,7 +32,8 @@ export function publicConfig(config) {
     github: config.github,
     sniper: {
       ...config.sniper,
-      walletList: getSniper().getWalletsStatus()
+      walletList: getSniper().getWalletsStatus(),
+      hotkeyCache: getSniper().getHotkeyCacheStatus(config.collector?.maxSubnets || 128)
     },
     auth: { username: config.auth.username }
   };

@@ -61,6 +61,13 @@
       </section>
 
       <section id="launchesPage" class="page">
+        <div class="risk-panel">
+          <h3>新子网上线记录</h3>
+          <table>
+            <thead><tr><th>发现时间</th><th>子网</th><th>名称</th><th>注册区块</th><th>发现区块</th><th>来源</th></tr></thead>
+            <tbody id="launchRows"></tbody>
+          </table>
+        </div>
         <form id="sniperForm" class="settings">
           <h3>自动打新 (Auto-Snipe)</h3>
           <p class="desc">发现新子网时自动使用配置的钱包买入 Alpha。助记词请在 .env 的 SNIPER_MNEMONIC 中配置。</p>
@@ -85,10 +92,10 @@
           <p id="sniperMsg"></p>
         </form>
         <div class="risk-panel">
-          <h3>新子网上线记录</h3>
+          <h3>128 个子网 Hotkey 缓存</h3>
           <table>
-            <thead><tr><th>发现时间</th><th>子网</th><th>名称</th><th>注册区块</th><th>发现区块</th><th>来源</th></tr></thead>
-            <tbody id="launchRows"></tbody>
+            <thead><tr><th>子网</th><th>Hotkey</th><th>来源</th><th>最后更新</th></tr></thead>
+            <tbody id="hotkeyRows"></tbody>
           </table>
         </div>
       </section>
