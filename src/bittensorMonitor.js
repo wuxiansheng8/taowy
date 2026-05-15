@@ -116,6 +116,7 @@ export class BittensorMonitor {
         block: this.state.currentBlock,
         subnetCount: this.state.race.currentSubnetCount
       });
+      getSniper().warmHotkeyCache(this.state.subnets);
       this.persistState();
       this.emit('refresh');
     } catch (error) {

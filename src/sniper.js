@@ -1,6 +1,9 @@
 import { Keyring } from '@polkadot/api';
 import { cryptoWaitReady } from '@polkadot/util-crypto';
 
+const HOTKEY_CACHE_TTL_MS = 60 * 60 * 1000;
+const HOTKEY_WARM_LIMIT = 30;
+
 class Sniper {
   constructor() {
     this.getConfig = () => ({});
@@ -214,7 +217,7 @@ class Sniper {
       return eventHotkey;
     }
     const cached = this.hotkeyByNetuid.get(Number(netuid));
-    if (cached && Date.now() - cached.updatedAt < 10 * 60 * 1000) return cached.hotkey;
+    if (cached && Date.now() - cached.updatedAt < HOTKEY_CACHE_TTL_MS) return cached.hotkey;
     const resolved = await this.querySubnetHotkey(netuid);
     if (resolved?.hotkey) {
       this.hotkeyByNetuid.set(Number(netuid), { ...resolved, updatedAt: Date.now() });
@@ -222,6 +225,22 @@ class Sniper {
       return resolved.hotkey;
     }
     return null;
+  }
+
+  warmHotkeyCache(subnets = []) {
+    if (!this.api) return;
+    const staleNetuids = subnets
+      .map((item) => Number(item?.netuid))
+      .filter((netuid) => Number.isInteger(netuid) && netuid > 0)
+      .filter((netuid) => {
+        const cached = this.hotkeyByNetuid.get(netuid);
+        return !cached || Date.now() - cached.updatedAt >= HOTKEY_CACHE_TTL_MS;
+      })
+      .slice(0, HOTKEY_WARM_LIMIT);
+    if (!staleNetuids.length) return;
+    Promise.allSettled(staleNetuids.map((netuid) => this.resolveHotkey(netuid)))
+      .then(() => this.logger.info('Hotkey 缓存预热完成', { count: staleNetuids.length }))
+      .catch(() => {});
   }
 
   hotkeyFromEvent(data) {
