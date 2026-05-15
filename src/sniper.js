@@ -128,12 +128,13 @@ class Sniper {
 
   async executeSubnetBuy(netuid, name, options = {}) {
     if (!this.api) throw new Error('链 API 尚未连接，无法发起购买');
-    const targetHotkey = await this.resolveHotkey(netuid, options.eventData);
-    if (!targetHotkey) {
+    const target = await this.resolveHotkey(netuid, options.eventData);
+    if (!target?.hotkey) {
       const reason = `子网 #${netuid} 未找到可用 hotkey`;
       this.logger.warn(reason);
       return { ok: false, skipped: true, reason };
     }
+    const targetHotkey = target.hotkey;
     const config = this.getConfig();
     const settings = config.sniper;
 
@@ -209,6 +210,10 @@ class Sniper {
         const errorMsg = error.message || String(error);
         this.logger.error(`[打新失败] 钱包【${walletName}】子网 #${netuid} 第 ${attempts} 次尝试失败: ${errorMsg}`);
 
+        if (/HotKeyAccountNotExists/i.test(errorMsg)) {
+          this.invalidateHotkey(netuid, targetHotkey, errorMsg);
+          break;
+        }
         if (isLast) break;
         await new Promise(resolve => setTimeout(resolve, retryInterval));
       }
@@ -224,20 +229,26 @@ class Sniper {
   }
 
   async resolveHotkey(netuid, eventData = null) {
-    const eventHotkey = this.hotkeyFromEvent(eventData);
-    if (eventHotkey) {
-      this.hotkeyByNetuid.set(Number(netuid), { hotkey: eventHotkey, source: 'event', updatedAt: Date.now() });
-      return eventHotkey;
-    }
-    const cached = this.hotkeyByNetuid.get(Number(netuid));
-    if (cached && Date.now() - cached.updatedAt < HOTKEY_CACHE_TTL_MS) return cached.hotkey;
+    const numericNetuid = Number(netuid);
+    const cached = this.hotkeyByNetuid.get(numericNetuid);
+    if (cached?.verified && Date.now() - cached.updatedAt < HOTKEY_CACHE_TTL_MS) return cached;
     const resolved = await this.querySubnetHotkey(netuid);
-    if (resolved?.hotkey) {
-      this.hotkeyByNetuid.set(Number(netuid), { ...resolved, updatedAt: Date.now() });
+    if (resolved?.hotkey && await this.verifyHotkey(netuid, resolved.hotkey)) {
+      const verified = { ...resolved, verified: true, updatedAt: Date.now() };
+      this.hotkeyByNetuid.set(numericNetuid, verified);
       this.logger.info(`子网 #${netuid} 自动选择 hotkey`, resolved);
-      return resolved.hotkey;
+      return verified;
     }
     return null;
+  }
+
+  invalidateHotkey(netuid, hotkey, reason = '') {
+    const numericNetuid = Number(netuid);
+    const cached = this.hotkeyByNetuid.get(numericNetuid);
+    if (cached?.hotkey === hotkey) {
+      this.hotkeyByNetuid.delete(numericNetuid);
+      this.logger.warn(`子网 #${netuid} hotkey 已失效并清除缓存`, { hotkey, reason });
+    }
   }
 
   warmHotkeyCache(subnets = []) {
@@ -265,25 +276,85 @@ class Sniper {
   async querySubnetHotkey(netuid) {
     const module = this.api.query.subtensorModule;
     if (!module) return null;
-    for (const method of ['subnetOwner', 'subnetOwners', 'networkOwner', 'owner']) {
-      try {
-        if (!module[method]) continue;
-        const value = await module[method](netuid);
-        const hotkey = this.hotkeyFromEvent(value?.toHuman?.() || value?.toString?.());
-        if (hotkey) return { hotkey, source: `subtensorModule.${method}` };
-      } catch {}
-    }
-    for (const method of ['keys', 'hotkeys']) {
+    for (const method of ['keys', 'hotkeys', 'uids', 'neurons']) {
       try {
         if (!module[method]?.entries) continue;
-        const entries = await module[method].entries(netuid);
-        for (const [, value] of entries) {
-          const hotkey = this.hotkeyFromEvent(value?.toHuman?.() || value?.toString?.());
-          if (hotkey) return { hotkey, source: `subtensorModule.${method}` };
-        }
+        const entries = await this.queryStorageEntries(module[method], netuid);
+        const hotkey = this.hotkeyFromEntries(entries, netuid);
+        if (hotkey) return { hotkey, source: `subtensorModule.${method}`, trusted: true };
       } catch {}
     }
     return null;
+  }
+
+  async queryStorageEntries(storage, netuid) {
+    try {
+      const scoped = await storage.entries(netuid);
+      if (scoped?.length) return scoped;
+    } catch {}
+    try {
+      const allEntries = await storage.entries();
+      return this.filterEntriesByNetuid(allEntries, netuid);
+    } catch {
+      return [];
+    }
+  }
+
+  filterEntriesByNetuid(entries, netuid) {
+    const numericNetuid = Number(netuid);
+    return (entries || []).filter(([storageKey, value]) => {
+      const keyHuman = storageKey?.toHuman?.();
+      const valueHuman = value?.toHuman?.();
+      const keyArgs = Array.isArray(keyHuman) ? keyHuman : (Array.isArray(storageKey?.args) ? storageKey.args.map(arg => arg.toString()) : []);
+      return this.containsNetuid(keyArgs, numericNetuid) || this.containsNetuid(valueHuman, numericNetuid);
+    });
+  }
+
+  containsNetuid(value, netuid) {
+    if (Array.isArray(value)) return value.some((item) => this.containsNetuid(item, netuid));
+    if (value && typeof value === 'object') return Object.values(value).some((item) => this.containsNetuid(item, netuid));
+    return Number(String(value).replace(/,/g, '')) === netuid;
+  }
+
+  hotkeyFromEntries(entries, netuid) {
+    for (const [storageKey, value] of entries) {
+      const keyHotkeys = this.hotkeysFromValue(storageKey?.toHuman?.() || storageKey?.toString?.());
+      const valueHotkeys = this.hotkeysFromValue(value?.toHuman?.() || value?.toString?.());
+      const hotkeys = [...keyHotkeys, ...valueHotkeys].filter((hotkey) => hotkey !== String(netuid));
+      if (hotkeys.length) return hotkeys[hotkeys.length - 1];
+    }
+    return null;
+  }
+
+  hotkeysFromValue(data) {
+    const text = JSON.stringify(data || '');
+    return text.match(/[1-9A-HJ-NP-Za-km-z]{47,48}/g) || [];
+  }
+
+  async verifyHotkey(netuid, hotkey) {
+    const module = this.api.query.subtensorModule;
+    if (!module || !hotkey) return false;
+    const checks = [
+      () => module.hotkeys?.(netuid, hotkey),
+      () => module.keys?.(netuid, hotkey),
+      () => module.uids?.(netuid, hotkey),
+      () => module.neurons?.(netuid, hotkey)
+    ];
+    for (const check of checks) {
+      try {
+        const value = await check();
+        if (this.storageHasValue(value)) return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  storageHasValue(value) {
+    if (!value) return false;
+    if (value.isSome) return true;
+    if (value.isEmpty) return false;
+    const text = value.toString?.() || '';
+    return Boolean(text && text !== '0' && text !== '[]' && text !== '{}');
   }
 
   async refreshBalance(address) {
