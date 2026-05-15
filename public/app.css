@@ -327,6 +327,12 @@ th { color: var(--muted); font-weight: 600; }
   padding: 12px;
   box-shadow: 0 12px 28px rgba(0, 143, 141, .07);
 }
+.sniper-wallet-row {
+  grid-template-columns: 70px 240px 150px minmax(360px, 1fr);
+}
+.sniper-wallet-row label:nth-child(4) input {
+  font-size: 13px;
+}
 .log-tools {
   display: flex;
   gap: 10px;
