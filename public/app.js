@@ -131,7 +131,7 @@ function renderCards(items) {
         ${priceChangeBadge(s.priceChange10m)}
       </div>
       <div class="card-metrics">
-        <div><span>当前市值</span><b>${fmtFixed(s.marketCap, 2, ' TAO')}</b></div>
+        <div><span>当前市值</span><b>${fmtUsd(s.marketCapUsd)}</b></div>
         <div><span>1小时交易量</span><b>${fmtFixed(s.volume1h, 2)}</b></div>
         <div><span>24小时交易量</span><b>${fmtFixed(s.volume24h, 2)}</b></div>
         <div><span>注销价格</span><b>${fmtTokenPrice(s.deregistrationPrice ?? s.emaPrice)}</b></div>
@@ -144,8 +144,13 @@ function sortSubnets(items, sort) {
   return [...items].sort((a, b) => {
     if (sort === 'volume1h') return num(b.volume1h, -1) - num(a.volume1h, -1) || num(a.netuid, 0) - num(b.netuid, 0);
     if (sort === 'volume24h') return num(b.volume24h, -1) - num(a.volume24h, -1) || num(a.netuid, 0) - num(b.netuid, 0);
+    if (sort === 'marketCap') return marketCapValue(b) - marketCapValue(a) || num(a.netuid, 0) - num(b.netuid, 0);
     return num(a.netuid, 0) - num(b.netuid, 0);
   });
+}
+
+function marketCapValue(item) {
+  return num(item.marketCapUsd ?? item.marketCapTao ?? item.marketCap, -1);
 }
 
 function renderLaunches(items) {
@@ -499,6 +504,13 @@ function fmtFixed(value, digits = 2, suffix = '') {
   const n = Number(value);
   if (!Number.isFinite(n)) return escapeHtml(String(value));
   return `${n.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}${suffix}`;
+}
+
+function fmtUsd(value) {
+  if (value === null || value === undefined || value === '') return '--';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return escapeHtml(String(value));
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtTokenPrice(value) {

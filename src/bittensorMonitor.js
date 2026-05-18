@@ -6,11 +6,14 @@ import { getSniper } from './sniper.js';
 
 const STATE_VERSION = 4;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
+const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd';
+const TAO_USD_CACHE_MS = 5 * 60 * 1000;
 
 const ZERO_STATE = {
   status: 'waiting',
   updatedAt: null,
   currentBlock: 0,
+  taoUsdPrice: null,
   registrationCost: null,
   immunityPeriod: null,
   subnets: Array.from({ length: 128 }, (_, i) => ({
@@ -19,6 +22,8 @@ const ZERO_STATE = {
     alphaPrice: null,
     registrationCost: null,
     emaPrice: null,
+    marketCap: null,
+    marketCapUsd: null,
     volume1h: null,
     volume24h: null,
     registrationBlock: null,
@@ -59,6 +64,7 @@ export class BittensorMonitor {
     this.lastSubnetSnapshot = new Map();
     this.volumeHistory = new Map();
     this.priceHistory = new Map();
+    this.taoUsdCache = { value: null, fetchedAt: 0 };
     this.refreshPromise = null;
     this.restoreState();
   }
@@ -128,8 +134,15 @@ export class BittensorMonitor {
   }
 
   async collect() {
-    const data = await this.python.collect();
-    const prune = await this.pool.rpc('subnetInfo_getSubnetToPrune').catch(() => null);
+    const [data, prune, taoUsdPrice] = await Promise.all([
+      this.python.collect(),
+      this.pool.rpc('subnetInfo_getSubnetToPrune').catch(() => null),
+      this.fetchTaoUsdPrice().catch((error) => {
+        this.logger.warn('TAO 美元价格获取失败', { error: error.message });
+        return this.taoUsdCache.value;
+      })
+    ]);
+    data.taoUsdPrice = taoUsdPrice;
     if (data.nextPruneCandidate == null && prune != null) data.nextPruneCandidate = parseMaybeNumber(prune);
     return data;
   }
@@ -139,7 +152,8 @@ export class BittensorMonitor {
       throw new Error('采集结果为空，保留上次快照');
     }
     const cfg = this.getConfig().collector;
-    const subnets = normalizeSubnets(this.decorateMetrics(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg);
+    const taoUsdPrice = nullableNumber(data.taoUsdPrice ?? this.state.taoUsdPrice);
+    const subnets = normalizeSubnets(this.decorateMetrics(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg, taoUsdPrice);
     const ranked = [...subnets].filter((s) => s.raceEligible).sort((a, b) => num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity));
     const immune = subnets.filter((s) => s.inImmunity).sort((a, b) => num(a.immunityEndsAtBlock, 0) - num(b.immunityEndsAtBlock, 0));
     const snapshot = buildSubnetSnapshot(subnets);
@@ -149,6 +163,7 @@ export class BittensorMonitor {
       status: 'ok',
       updatedAt: new Date().toISOString(),
       currentBlock: data.currentBlock || this.state.currentBlock,
+      taoUsdPrice,
       registrationCost: data.registrationCost ?? null,
       immunityPeriod: data.immunityPeriod ?? null,
       subnets,
@@ -408,9 +423,32 @@ export class BittensorMonitor {
     this.state.errors.push(item);
     this.logger.warn('采集器异常', item);
   }
+
+  async fetchTaoUsdPrice() {
+    const now = Date.now();
+    if (this.taoUsdCache.value != null && now - this.taoUsdCache.fetchedAt < TAO_USD_CACHE_MS) {
+      return this.taoUsdCache.value;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(TAO_USD_PRICE_URL, {
+        headers: { accept: 'application/json' },
+        signal: controller.signal
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const value = nullableNumber(json?.bittensor?.usd);
+      if (value == null || value <= 0) throw new Error('价格响应缺少 bittensor.usd');
+      this.taoUsdCache = { value, fetchedAt: now };
+      return value;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
-function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock, cfg) {
+function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock, cfg, taoUsdPrice = null) {
   const block = Number(currentBlock || 0);
   const fallback = Array.from({ length: cfg.maxSubnets || 128 }, (_, i) => ({ netuid: i + 1 }));
   const source = items.length ? items : fallback;
@@ -423,13 +461,17 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
     const immunityKnown = end != null && block > 0;
     const inImmunity = immunityKnown ? remaining > 0 : false;
     const raceEligible = immunityKnown ? !inImmunity : false;
+    const marketCapTao = nullableNumber(item.marketCap ?? item.market_cap ?? item.marketCapTao ?? item.market_cap_tao)
+      ?? computeMarketCap(item);
+    const marketCapUsd = marketCapTao != null && taoUsdPrice != null ? marketCapTao * taoUsdPrice : null;
     return {
       netuid,
       name: item.name || item.subnetName || `Subnet ${netuid}`,
       alphaPrice: nullableNumber(item.alphaPrice ?? item.alpha_price ?? item.price),
       priceChange10m: nullableNumber(item.priceChange10m ?? item.price_change_10m),
-      marketCap: nullableNumber(item.marketCap ?? item.market_cap ?? item.marketCapTao ?? item.market_cap_tao)
-        ?? computeMarketCap(item),
+      marketCap: marketCapTao,
+      marketCapTao,
+      marketCapUsd,
       registrationCost: nullableNumber(item.registrationCost ?? item.registration_cost ?? registrationCost),
       emaPrice: nullableNumber(item.emaPrice ?? item.ema_price ?? item.moving_price),
       volume1h: nullableNumber(item.volume1h ?? item.volume_1h),
@@ -588,9 +630,14 @@ function beijingDateKey(ts) {
 
 function compareSubnets(a, b, sort) {
   if (sort === 'ema') return num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity) || a.netuid - b.netuid;
+  if (sort === 'marketCap') return marketCapValue(b) - marketCapValue(a) || a.netuid - b.netuid;
   if (sort === 'volume1h') return num(b.volume1h, -1) - num(a.volume1h, -1) || a.netuid - b.netuid;
   if (sort === 'volume24h') return num(b.volume24h, -1) - num(a.volume24h, -1) || a.netuid - b.netuid;
   return a.netuid - b.netuid;
+}
+
+function marketCapValue(item) {
+  return num(item.marketCapUsd ?? item.marketCapTao ?? item.marketCap, -1);
 }
 
 function nullableNumber(value) {
