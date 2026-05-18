@@ -510,7 +510,15 @@ function fmtUsd(value) {
   if (value === null || value === undefined || value === '') return '--';
   const n = Number(value);
   if (!Number.isFinite(n)) return escapeHtml(String(value));
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (Math.abs(n) >= 1000000) return `$${fmtCompactUsd(n / 1000000)}M`;
+  return `$${fmtCompactUsd(n / 1000)}K`;
+}
+
+function fmtCompactUsd(value) {
+  return Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 }
 
 function fmtTokenPrice(value) {
