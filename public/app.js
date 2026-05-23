@@ -228,25 +228,8 @@ function populateSniperForm(sniper = {}) {
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
   form.sniperTxTimeoutMs.value = sniper.txTimeoutMs ?? 5000;
   form.sniperDefaultHotkey.value = sniper.defaultHotkey || '';
-  renderManualHotkeys(sniper.hotkeys || {});
   renderSniperWallets(sniper.walletList || []);
   renderHotkeyCache(sniper.hotkeyCache || []);
-}
-
-function renderManualHotkeys(hotkeys = {}) {
-  const rows = Object.entries(hotkeys)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([netuid, hotkey]) => manualHotkeyRow({ netuid, hotkey }))
-    .join('');
-  $('#manualHotkeyList').innerHTML = rows || '<p class="desc">未设置手动 hotkey，系统会自动从链上解析。</p>';
-}
-
-function manualHotkeyRow(item = {}) {
-  return `<div class="api-row manual-hotkey-row">
-    <label>子网 SN<input data-field="netuid" type="number" min="1" max="128" value="${escapeAttr(item.netuid || '')}" placeholder="116"></label>
-    <label>hotkey 地址<input data-field="hotkey" value="${escapeAttr(item.hotkey || '')}" placeholder="5..."></label>
-    <button type="button" data-remove-manual-hotkey>删除</button>
-  </div>`;
 }
 
 function renderApiRows(keys) {
@@ -284,10 +267,9 @@ function renderHotkeyCache(items) {
       <td>SN${item.netuid}</td>
       <td class="mono">${item.hotkey ? escapeHtml(item.hotkey) : '--'}</td>
       <td>${escapeHtml(item.source || '--')}</td>
-      <td>${item.updatedAt ? fmtTime(item.updatedAt) : '--'}</td>
     </tr>
   `).join('');
-  $('#hotkeyRows').innerHTML = rows || '<tr><td colspan="4">暂无验证者缓存</td></tr>';
+  $('#hotkeyRows').innerHTML = rows || '<tr><td colspan="3">暂无验证者缓存</td></tr>';
 }
 
 function apiRow(key, i) {
@@ -306,18 +288,6 @@ $('#addApiBtn').addEventListener('click', () => {
 
 $('#apiList').addEventListener('click', (event) => {
   if (event.target.matches('[data-remove]')) event.target.closest('.api-row').remove();
-});
-
-$('#addManualHotkeyBtn').addEventListener('click', () => {
-  const list = $('#manualHotkeyList');
-  if (list.querySelector('.desc')) list.innerHTML = '';
-  list.insertAdjacentHTML('beforeend', manualHotkeyRow());
-});
-
-$('#manualHotkeyList').addEventListener('click', (event) => {
-  if (!event.target.matches('[data-remove-manual-hotkey]')) return;
-  event.target.closest('.manual-hotkey-row').remove();
-  if (!$('#manualHotkeyList').querySelector('.manual-hotkey-row')) renderManualHotkeys({});
 });
 
 $('#testTelegramBtn').addEventListener('click', async () => {
@@ -483,7 +453,6 @@ function collectSniperSettings(form) {
     retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
     txTimeoutMs: Number(form.sniperTxTimeoutMs.value),
     defaultHotkey: form.sniperDefaultHotkey.value.trim(),
-    hotkeys: collectManualHotkeys(),
     wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
       acc[row.dataset.address] = {
         enabled: row.querySelector('[data-field="enabled"]').checked,
@@ -492,17 +461,6 @@ function collectSniperSettings(form) {
       return acc;
     }, {})
   };
-}
-
-function collectManualHotkeys() {
-  return [...document.querySelectorAll('.manual-hotkey-row')].reduce((acc, row) => {
-    const netuid = Number(row.querySelector('[data-field="netuid"]').value);
-    const hotkey = row.querySelector('[data-field="hotkey"]').value.trim();
-    if (Number.isInteger(netuid) && netuid >= 1 && netuid <= 128 && hotkey) {
-      acc[String(netuid)] = hotkey;
-    }
-    return acc;
-  }, {});
 }
 
 function shortAddress(address) {
