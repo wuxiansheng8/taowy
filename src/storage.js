@@ -45,6 +45,7 @@ export const defaultConfig = {
     maxRetries: 5,
     retryIntervalMs: 200,
     txTimeoutMs: 5000,
+    hotkeys: {}, // 格式: { "116": "hotkey 地址" }
     wallets: {} // 格式: { "address": { name: "备注", enabled: true } }
   }
 };

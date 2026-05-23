@@ -96,8 +96,18 @@ class Sniper {
   }
 
   getHotkeyCacheStatus(maxNetuid = 128) {
+    const manualHotkeys = this.getConfig().sniper?.hotkeys || {};
     return Array.from({ length: maxNetuid }, (_, index) => {
       const netuid = index + 1;
+      const manual = normalizeHotkey(manualHotkeys[String(netuid)]);
+      if (manual) {
+        return {
+          netuid,
+          hotkey: manual,
+          source: 'manual',
+          updatedAt: null
+        };
+      }
       const cached = this.hotkeyByNetuid.get(netuid);
       return {
         netuid,
@@ -249,6 +259,16 @@ class Sniper {
 
   async resolveHotkey(netuid, eventData = null) {
     const numericNetuid = Number(netuid);
+    const manual = this.manualHotkey(numericNetuid);
+    if (manual) {
+      return {
+        hotkey: manual,
+        source: 'manual',
+        trusted: true,
+        verified: true,
+        updatedAt: Date.now()
+      };
+    }
     const cached = this.hotkeyByNetuid.get(numericNetuid);
     if (cached?.verified && Date.now() - cached.updatedAt < HOTKEY_CACHE_TTL_MS) return cached;
     const resolved = await this.querySubnetHotkey(netuid);
@@ -260,6 +280,11 @@ class Sniper {
       return verified;
     }
     return null;
+  }
+
+  manualHotkey(netuid) {
+    const hotkeys = this.getConfig().sniper?.hotkeys || {};
+    return normalizeHotkey(hotkeys[String(Number(netuid))]);
   }
 
   invalidateHotkey(netuid, hotkey, reason = '') {
@@ -277,6 +302,7 @@ class Sniper {
     const staleNetuids = subnets
       .map((item) => Number(item?.netuid))
       .filter((netuid) => Number.isInteger(netuid) && netuid > 0)
+      .filter((netuid) => !this.manualHotkey(netuid))
       .filter((netuid) => {
         const cached = this.hotkeyByNetuid.get(netuid);
         return !cached || Date.now() - cached.updatedAt >= HOTKEY_CACHE_TTL_MS;
@@ -473,4 +499,10 @@ export function getSniper() {
 
 export function configureSniper(deps) {
   getSniper().configure(deps);
+}
+
+function normalizeHotkey(value) {
+  const text = String(value || '').trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(text)) return '';
+  return text;
 }

@@ -337,6 +337,9 @@ th { color: var(--muted); font-weight: 600; }
 .sniper-wallet-row label:nth-child(4) input {
   font-size: 13px;
 }
+.manual-hotkey-row {
+  grid-template-columns: 130px minmax(360px, 1fr) 86px;
+}
 .log-tools {
   display: flex;
   gap: 10px;

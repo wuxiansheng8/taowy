@@ -27,7 +27,17 @@ const next = {
     maxSubnets: 128
   },
   telegram: current.telegram || { enabled: false, botToken: '', chatId: '' },
-  github: { ...(current.github || {}), repo }
+  github: { ...(current.github || {}), repo },
+  sniper: current.sniper || {
+    enabled: false,
+    amountTao: 1.0,
+    maxSlippage: 10,
+    maxRetries: 5,
+    retryIntervalMs: 200,
+    txTimeoutMs: 5000,
+    hotkeys: {},
+    wallets: {}
+  }
 };
 fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
 console.log('配置已写入 data/config.json');
