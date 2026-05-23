@@ -102,6 +102,33 @@ def get_alpha_staked(sub, netuid):
     return None
 
 
+def get_alpha_staked_by_netuid(sub):
+    for method_name in (
+        "all_metagraphs",
+        "get_all_metagraphs",
+        "all_metagraphs_info",
+        "get_all_metagraphs_info",
+    ):
+        method = getattr(sub, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            result = method()
+        except Exception:
+            continue
+        totals = {}
+        for item in result or []:
+            if item is None:
+                continue
+            netuid = as_number(first_attr(item, ("netuid", "netUID", "uid", "id")))
+            total = alpha_stake_from_metagraph(item)
+            if netuid is not None and total is not None:
+                totals[int(netuid)] = total
+        if totals:
+            return totals
+    return {}
+
+
 def get_immunity_period(sub, netuid):
     try:
         return int(sub.immunity_period(netuid))
@@ -160,6 +187,7 @@ def main():
             registration_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost"))
 
         dynamic = sub.all_subnets() or []
+        alpha_staked_by_netuid = get_alpha_staked_by_netuid(sub)
         network_immunity_period = get_network_immunity_period(sub)
         next_prune = rpc_request(sub, "subnetInfo_getSubnetToPrune")
         if isinstance(next_prune, str):
@@ -202,7 +230,7 @@ def main():
                 "alphaIn": as_number(getattr(item, "alpha_in", None)),
                 "alphaOut": as_number(getattr(item, "alpha_out", None)),
                 "taoIn": as_number(getattr(item, "tao_in", None)),
-                "alphaStaked": get_alpha_staked(sub, netuid)
+                "alphaStaked": alpha_staked_by_netuid.get(netuid)
             })
 
         output = {
