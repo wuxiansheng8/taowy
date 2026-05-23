@@ -227,6 +227,7 @@ function populateSniperForm(sniper = {}) {
   form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
   form.sniperTxTimeoutMs.value = sniper.txTimeoutMs ?? 5000;
+  form.sniperDefaultHotkey.value = sniper.defaultHotkey || '';
   renderManualHotkeys(sniper.hotkeys || {});
   renderSniperWallets(sniper.walletList || []);
   renderHotkeyCache(sniper.hotkeyCache || []);
@@ -481,6 +482,7 @@ function collectSniperSettings(form) {
     maxRetries: Number(form.sniperMaxRetries.value),
     retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
     txTimeoutMs: Number(form.sniperTxTimeoutMs.value),
+    defaultHotkey: form.sniperDefaultHotkey.value.trim(),
     hotkeys: collectManualHotkeys(),
     wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
       acc[row.dataset.address] = {

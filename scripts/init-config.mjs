@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
 
+const DEFAULT_SNIPER_HOTKEY = '5E4z3h9yVhmQyCFWNbY9BPpwhx4xFiPwq3eeqmBgVF6KULde';
+
 const [username, password, port, repo = ''] = process.argv.slice(2);
 if (!username || !password || !port) {
   console.error('用法: node scripts/init-config.mjs <账号> <密码> <端口> [githubRepo]');
@@ -28,15 +30,17 @@ const next = {
   },
   telegram: current.telegram || { enabled: false, botToken: '', chatId: '' },
   github: { ...(current.github || {}), repo },
-  sniper: current.sniper || {
+  sniper: {
     enabled: false,
     amountTao: 1.0,
     maxSlippage: 10,
     maxRetries: 5,
     retryIntervalMs: 200,
     txTimeoutMs: 5000,
+    defaultHotkey: DEFAULT_SNIPER_HOTKEY,
     hotkeys: {},
-    wallets: {}
+    wallets: {},
+    ...(current.sniper || {})
   }
 };
 fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');

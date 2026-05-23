@@ -246,6 +246,9 @@ function sanitizeSettings(current, body) {
     next.sniper.maxRetries = clamp(body.sniper.maxRetries, 0, 1000, current.sniper.maxRetries);
     next.sniper.retryIntervalMs = clamp(body.sniper.retryIntervalMs, 0, 60000, current.sniper.retryIntervalMs);
     next.sniper.txTimeoutMs = clamp(body.sniper.txTimeoutMs, 1000, 30000, current.sniper.txTimeoutMs || 5000);
+    next.sniper.defaultHotkey = sanitizeHotkey(
+      body.sniper.defaultHotkey !== undefined ? body.sniper.defaultHotkey : current.sniper.defaultHotkey
+    );
     if (body.sniper.hotkeys) {
       next.sniper.hotkeys = sanitizeHotkeys(body.sniper.hotkeys, next.collector.maxSubnets || 128);
     } else {
@@ -270,13 +273,18 @@ function sanitizeHotkeys(input, maxSubnets = 128) {
   const out = {};
   for (const [netuidText, hotkeyValue] of Object.entries(input || {})) {
     const netuid = Number(netuidText);
-    const hotkey = String(hotkeyValue || '').trim();
+    const hotkey = sanitizeHotkey(hotkeyValue);
     if (!Number.isInteger(netuid) || netuid < 1 || netuid > maxSubnets) continue;
     if (!hotkey) continue;
-    if (!/^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey)) continue;
     out[String(netuid)] = hotkey;
   }
   return out;
+}
+
+function sanitizeHotkey(value) {
+  const hotkey = String(value || '').trim();
+  if (!hotkey) return '';
+  return /^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey) ? hotkey : '';
 }
 
 function clamp(value, min, max, fallback) {

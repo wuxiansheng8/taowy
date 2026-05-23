@@ -3,7 +3,6 @@ import { cryptoWaitReady } from '@polkadot/util-crypto';
 import { loadHotkeyCache, saveHotkeyCache } from './storage.js';
 
 const HOTKEY_CACHE_TTL_MS = 60 * 60 * 1000;
-const HOTKEY_WARM_LIMIT = 30;
 
 class Sniper {
   constructor() {
@@ -96,9 +95,19 @@ class Sniper {
   }
 
   getHotkeyCacheStatus(maxNetuid = 128) {
-    const manualHotkeys = this.getConfig().sniper?.hotkeys || {};
+    const config = this.getConfig().sniper || {};
+    const defaultHotkey = normalizeHotkey(config.defaultHotkey);
+    const manualHotkeys = config.hotkeys || {};
     return Array.from({ length: maxNetuid }, (_, index) => {
       const netuid = index + 1;
+      if (defaultHotkey) {
+        return {
+          netuid,
+          hotkey: defaultHotkey,
+          source: 'manual-default',
+          updatedAt: null
+        };
+      }
       const manual = normalizeHotkey(manualHotkeys[String(netuid)]);
       if (manual) {
         return {
@@ -283,7 +292,10 @@ class Sniper {
   }
 
   manualHotkey(netuid) {
-    const hotkeys = this.getConfig().sniper?.hotkeys || {};
+    const config = this.getConfig().sniper || {};
+    const defaultHotkey = normalizeHotkey(config.defaultHotkey);
+    if (defaultHotkey) return defaultHotkey;
+    const hotkeys = config.hotkeys || {};
     return normalizeHotkey(hotkeys[String(Number(netuid))]);
   }
 
@@ -295,23 +307,6 @@ class Sniper {
       this.saveHotkeyCache();
       this.logger.warn(`子网 #${netuid} hotkey 已失效并清除缓存`, { hotkey, reason });
     }
-  }
-
-  warmHotkeyCache(subnets = []) {
-    if (!this.api) return;
-    const staleNetuids = subnets
-      .map((item) => Number(item?.netuid))
-      .filter((netuid) => Number.isInteger(netuid) && netuid > 0)
-      .filter((netuid) => !this.manualHotkey(netuid))
-      .filter((netuid) => {
-        const cached = this.hotkeyByNetuid.get(netuid);
-        return !cached || Date.now() - cached.updatedAt >= HOTKEY_CACHE_TTL_MS;
-      })
-      .slice(0, HOTKEY_WARM_LIMIT);
-    if (!staleNetuids.length) return;
-    Promise.allSettled(staleNetuids.map((netuid) => this.resolveHotkey(netuid)))
-      .then(() => this.logger.info('Hotkey 缓存预热完成', { count: staleNetuids.length }))
-      .catch(() => {});
   }
 
   hotkeyFromEvent(data) {

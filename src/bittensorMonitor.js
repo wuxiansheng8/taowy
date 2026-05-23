@@ -125,7 +125,6 @@ export class BittensorMonitor {
         alphaStakedCount: data.collectorStats?.alphaStakedCount,
         alphaStaked116: data.collectorStats?.alphaStaked116
       });
-      getSniper().warmHotkeyCache(this.state.subnets);
       this.persistState();
       this.emit('refresh');
     } catch (error) {

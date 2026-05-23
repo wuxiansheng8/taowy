@@ -10,6 +10,7 @@ export const statePath = path.join(dataDir, 'state.json');
 export const hotkeyCachePath = path.join(dataDir, 'hotkey-cache.json');
 
 const defaultHash = bcrypt.hashSync('admin123', 10);
+const DEFAULT_SNIPER_HOTKEY = '5E4z3h9yVhmQyCFWNbY9BPpwhx4xFiPwq3eeqmBgVF6KULde';
 
 export const defaultConfig = {
   server: { port: Number(process.env.PORT || 3000) },
@@ -45,6 +46,7 @@ export const defaultConfig = {
     maxRetries: 5,
     retryIntervalMs: 200,
     txTimeoutMs: 5000,
+    defaultHotkey: DEFAULT_SNIPER_HOTKEY,
     hotkeys: {}, // 格式: { "116": "hotkey 地址" }
     wallets: {} // 格式: { "address": { name: "备注", enabled: true } }
   }
