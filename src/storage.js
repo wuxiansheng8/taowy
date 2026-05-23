@@ -44,6 +44,7 @@ export const defaultConfig = {
     amountTao: 1.0,
     maxSlippage: 10,
     maxRetries: 5,
+    burstCount: 1,
     retryIntervalMs: 200,
     txTimeoutMs: 5000,
     defaultHotkey: DEFAULT_SNIPER_HOTKEY,

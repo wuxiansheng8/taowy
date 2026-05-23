@@ -159,8 +159,7 @@ class Sniper {
       requireEnabled: false,
       dedupe: false,
       label: '手动指定购买',
-      triggerText: '手动指定购买触发',
-      refreshBalances: true
+      triggerText: '手动指定购买触发'
     });
   }
 
@@ -179,64 +178,54 @@ class Sniper {
     if (options.requireEnabled && !settings?.enabled) return { ok: false, skipped: true, reason: '自动打新未启用' };
     if (options.dedupe && this.processedNetuids.has(netuid)) return { ok: false, skipped: true, reason: '子网已处理' };
     if (options.dedupe) this.processedNetuids.add(netuid);
-    if (options.refreshBalances) await this.refreshAllBalances();
 
     const activePairs = [];
-    const skippedWallets = [];
     const walletSettings = settings.wallets || {};
     const amountTao = settings.amountTao || 1.0;
     const maxRetries = settings.maxRetries === 0 ? Infinity : (settings.maxRetries || 5);
+    const burstCount = Math.max(1, Math.floor(Number(settings.burstCount || 1)));
     const retryInterval = settings.retryIntervalMs ?? 200;
     const txTimeoutMs = settings.txTimeoutMs || 5000;
 
     for (const [address, data] of this.walletMap.entries()) {
       const setting = walletSettings[address] || {};
       if (setting.enabled === false) continue;
-      const balance = this.balanceByAddress.get(address);
-      if (balance && Number.isFinite(balance.freeTao) && balance.freeTao < amountTao) {
-        skippedWallets.push({ address, name: setting.name || address.slice(-4), freeTao: balance.freeTao, reason: '余额不足' });
-        this.logger.warn(`钱包【${setting.name || address.slice(-4)}】可用余额不足，跳过打新`, {
-          address,
-          freeTao: balance.freeTao,
-          amountTao
-        });
-        continue;
-      }
       activePairs.push({ pair: data.pair, name: setting.name || address.slice(-4) });
     }
 
     if (activePairs.length === 0) {
       this.logger.warn(`检测到子网 #${netuid}，但没有可用钱包`);
-      return { ok: false, skipped: true, reason: '没有可用钱包', skippedWallets };
+      return { ok: false, skipped: true, reason: '没有可用钱包' };
     }
 
-    this.logger.info(`[${options.label || '打新'}] 检测到子网 #${netuid} (${name || '未知'})，启动 ${activePairs.length} 个钱包并发购买...`);
+    this.logger.info(`[${options.label || '打新'}] 检测到子网 #${netuid} (${name || '未知'})，启动 ${activePairs.length} 个钱包，每钱包 ${burstCount} 笔并发购买...`);
 
-    Promise.all(activePairs.map(item =>
-      this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs, targetHotkey)
-    )).catch(err => {
+    const tasks = activePairs.flatMap((item) => Array.from({ length: burstCount }, (_, index) =>
+      this.executeSnipe(item.pair, item.name, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs, targetHotkey, index + 1)
+    ));
+    Promise.all(tasks).catch(err => {
       this.logger.error(`[${options.label || '打新'}] 异常:`, err);
     });
 
-    this.notifier.alert(`[${options.triggerText || '打新触发'}] 子网 #${netuid}\n目标 hotkey: ${targetHotkey}\n开启钱包: ${activePairs.length} 个\n每单金额: ${amountTao} TAO`, { netuid, hotkey: targetHotkey })
+    this.notifier.alert(`[${options.triggerText || '打新触发'}] 子网 #${netuid}\n目标 hotkey: ${targetHotkey}\n开启钱包: ${activePairs.length} 个\n每钱包并发: ${burstCount} 笔\n每单金额: ${amountTao} TAO`, { netuid, hotkey: targetHotkey, burstCount })
       .catch(() => {});
-    return { ok: true, netuid, hotkey: targetHotkey, activeWallets: activePairs.length, skippedWallets };
+    return { ok: true, netuid, hotkey: targetHotkey, activeWallets: activePairs.length, burstCount };
   }
 
-  async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs, targetHotkey) {
+  async executeSnipe(pair, walletName, netuid, amountTao, maxRetries, retryInterval, txTimeoutMs, targetHotkey, burstIndex = 1) {
     let attempts = 0;
     const amountBigInt = BigInt(Math.floor(amountTao * 1e9));
 
     while (attempts <= maxRetries) {
       attempts++;
       try {
-        this.logger.info(`[打新] 钱包【${walletName}】尝试购买 #${netuid} (第 ${attempts} 次)...`);
+        this.logger.info(`[打新] 钱包【${walletName}】并发 ${burstIndex} 尝试购买 #${netuid} (第 ${attempts} 次)...`);
 
         const tx = this.api.tx.subtensorModule.addStake(targetHotkey, netuid, amountBigInt);
         const result = await this.sendTx(tx, pair, txTimeoutMs);
 
         if (result.success) {
-          const msg = `[打新成功] 钱包: ${walletName}\n子网 #${netuid} 购买成功！\n耗时: 第 ${attempts} 次尝试\n交易哈希: ${result.hash}`;
+          const msg = `[打新成功] 钱包: ${walletName}\n子网 #${netuid} 购买成功！\n并发: ${burstIndex}\n耗时: 第 ${attempts} 次尝试\n交易哈希: ${result.hash}`;
           this.logger.info(msg);
           this.notifier.alert(msg, { netuid, wallet: pair.address, hash: result.hash });
           return;
@@ -246,7 +235,7 @@ class Sniper {
       } catch (error) {
         const isLast = attempts > maxRetries;
         const errorMsg = error.message || String(error);
-        this.logger.error(`[打新失败] 钱包【${walletName}】子网 #${netuid} 第 ${attempts} 次尝试失败: ${errorMsg}`);
+        this.logger.error(`[打新失败] 钱包【${walletName}】子网 #${netuid} 并发 ${burstIndex} 第 ${attempts} 次尝试失败: ${errorMsg}`);
 
         if (/HotKeyAccountNotExists/i.test(errorMsg)) {
           this.invalidateHotkey(netuid, targetHotkey, errorMsg);

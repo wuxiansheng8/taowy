@@ -225,6 +225,7 @@ function populateSniperForm(sniper = {}) {
   form.sniperAmountTao.value = sniper.amountTao ?? 1;
   form.sniperMaxSlippage.value = sniper.maxSlippage ?? 10;
   form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
+  form.sniperBurstCount.value = sniper.burstCount ?? 1;
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
   form.sniperTxTimeoutMs.value = sniper.txTimeoutMs ?? 5000;
   form.sniperDefaultHotkey.value = sniper.defaultHotkey || '';
@@ -434,7 +435,7 @@ $('#manualBuyBtn').addEventListener('click', async () => {
       body: JSON.stringify({ netuid, sniper })
     });
     $('#sniperMsg').textContent = result.ok
-      ? `已触发 SN${netuid} 购买，hotkey ${shortAddress(result.hotkey)}，启用钱包 ${result.activeWallets} 个`
+      ? `已触发 SN${netuid} 购买，hotkey ${shortAddress(result.hotkey)}，启用钱包 ${result.activeWallets} 个，每钱包并发 ${result.burstCount || 1} 笔`
       : `未触发：${result.reason || '没有可用钱包'}`;
     await loadSettings();
   } catch (error) {
@@ -450,6 +451,7 @@ function collectSniperSettings(form) {
     amountTao: Number(form.sniperAmountTao.value),
     maxSlippage: Number(form.sniperMaxSlippage.value),
     maxRetries: Number(form.sniperMaxRetries.value),
+    burstCount: Number(form.sniperBurstCount.value),
     retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
     txTimeoutMs: Number(form.sniperTxTimeoutMs.value),
     defaultHotkey: form.sniperDefaultHotkey.value.trim(),

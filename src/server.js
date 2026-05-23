@@ -244,6 +244,7 @@ function sanitizeSettings(current, body) {
     next.sniper.amountTao = clamp(body.sniper.amountTao, 0.001, 10000, current.sniper.amountTao);
     next.sniper.maxSlippage = clamp(body.sniper.maxSlippage, 0, 100, current.sniper.maxSlippage);
     next.sniper.maxRetries = clamp(body.sniper.maxRetries, 0, 1000, current.sniper.maxRetries);
+    next.sniper.burstCount = Math.floor(clamp(body.sniper.burstCount, 1, 50, current.sniper.burstCount || 1));
     next.sniper.retryIntervalMs = clamp(body.sniper.retryIntervalMs, 0, 60000, current.sniper.retryIntervalMs);
     next.sniper.txTimeoutMs = clamp(body.sniper.txTimeoutMs, 1000, 30000, current.sniper.txTimeoutMs || 5000);
     next.sniper.defaultHotkey = sanitizeHotkey(
