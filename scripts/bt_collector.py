@@ -29,6 +29,20 @@ def as_number(value):
             return None
 
 
+def plain_value(value):
+    if hasattr(value, "value"):
+        return plain_value(value.value)
+    return value
+
+
+def alpha_storage_as_number(value):
+    raw = plain_value(value)
+    try:
+        return float(raw) / 1e9
+    except Exception:
+        return as_number(value)
+
+
 def human_name(dynamic):
     ident = getattr(dynamic, "subnet_identity", None)
     if ident and getattr(ident, "subnet_name", None):
@@ -103,6 +117,27 @@ def get_alpha_staked(sub, netuid):
 
 
 def get_alpha_staked_by_netuid(sub):
+    try:
+        totals = {}
+        rows = sub.substrate.query_map(
+            module="SubtensorModule",
+            storage_function="TotalHotkeyAlpha",
+        )
+        for key, value in rows:
+            parsed_key = plain_value(key)
+            if isinstance(parsed_key, (list, tuple)) and len(parsed_key) >= 2:
+                netuid = as_number(parsed_key[1])
+            else:
+                netuid = first_attr(parsed_key, ("netuid", "netUID"))
+                netuid = as_number(netuid)
+            amount = alpha_storage_as_number(value)
+            if netuid is not None and amount is not None:
+                totals[int(netuid)] = totals.get(int(netuid), 0.0) + amount
+        if totals:
+            return totals
+    except Exception:
+        pass
+
     for method_name in (
         "all_metagraphs",
         "get_all_metagraphs",
@@ -238,6 +273,10 @@ def main():
             "registrationCost": registration_cost,
             "immunityPeriod": network_immunity_period,
             "nextPruneCandidate": next_prune,
+            "collectorStats": {
+                "alphaStakedCount": len(alpha_staked_by_netuid),
+                "alphaStaked116": alpha_staked_by_netuid.get(116),
+            },
             "subnets": sorted(subnets, key=lambda x: x["netuid"])
         }
         print(json.dumps(output, ensure_ascii=False))

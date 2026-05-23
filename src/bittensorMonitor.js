@@ -120,7 +120,9 @@ export class BittensorMonitor {
       this.applyCollected(data, reason);
       this.logger.info(`${reason}完成`, {
         block: this.state.currentBlock,
-        subnetCount: this.state.race.currentSubnetCount
+        subnetCount: this.state.race.currentSubnetCount,
+        alphaStakedCount: data.collectorStats?.alphaStakedCount,
+        alphaStaked116: data.collectorStats?.alphaStaked116
       });
       getSniper().warmHotkeyCache(this.state.subnets);
       this.persistState();
