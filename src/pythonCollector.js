@@ -8,6 +8,23 @@ export class PythonCollector {
     this.pool = pool;
     this.getConfig = getConfig;
     this.logger = logger;
+    this.exactAlphaCache = new Map();
+    this.exactAlphaTimer = null;
+    this.exactAlphaRunning = false;
+    this.exactAlphaCursor = 0;
+  }
+
+  startExactAlphaUpdater(onUpdate) {
+    clearInterval(this.exactAlphaTimer);
+    const intervalMs = Math.max(1000, Number(process.env.EXACT_DEREGISTRATION_INTERVAL_MS || 1000));
+    this.exactAlphaTimer = setInterval(() => {
+      this.tickExactAlpha(onUpdate).catch((error) => {
+        this.logger.warn('后台注销价更新失败', { error: error.message });
+      });
+    }, intervalMs);
+    this.tickExactAlpha(onUpdate).catch((error) => {
+      this.logger.warn('后台注销价启动更新失败', { error: error.message });
+    });
   }
 
   async collect() {
@@ -18,54 +35,81 @@ export class PythonCollector {
     const script = path.join(rootDir, 'scripts', 'bt_collector.py');
     const cfg = this.getConfig();
     const timeoutMs = Math.max(180000, Number(cfg.apiPool.timeoutMs || 10000) * 4);
-    const exactNetuids = parseNetuidList(process.env.EXACT_DEREGISTRATION_NETUIDS || '116');
-    const exactPromise = exactNetuids.length
-      ? this.collectExactAlpha({ py, script, cfg, netuids: exactNetuids }).catch((error) => {
-          this.logger.warn('精确注销价采集失败，主采集继续使用估算值', { error: error.message });
-          return null;
-        })
-      : Promise.resolve(null);
-
     const data = await this.runPython(py, [
       script,
       '--endpoint', endpoint,
       '--block-time-ms', String(cfg.collector.blockTimeMs || 12000),
       '--exact-alpha-netuids', ''
     ], timeoutMs);
-    const exact = await exactPromise;
-    if (exact) mergeExactAlpha(data, exact);
+    mergeExactAlpha(data, this.exactAlphaSnapshot());
     return data;
   }
 
-  async collectExactAlpha({ py, script, cfg, netuids }) {
-    const keys = this.pool.enabledKeys();
-    if (!keys.length || !netuids.length) return null;
-    const chunks = chunkRoundRobin(netuids, keys.length);
-    const timeoutMs = Math.min(90000, Math.max(30000, Number(cfg.apiPool.timeoutMs || 10000) * 6));
-    const jobs = chunks.map((chunk, index) => {
-      if (!chunk.length) return null;
-      const key = keys[index];
-      this.logger.info('精确注销价使用 Dwellir API', { name: key.name || key.id, netuids: chunk.join(',') });
-      return this.runPython(py, [
+  async tickExactAlpha(onUpdate) {
+    if (this.exactAlphaRunning) return;
+    const netuid = this.nextDueExactNetuid();
+    if (netuid == null) return;
+
+    this.exactAlphaRunning = true;
+    try {
+      const cfg = this.getConfig();
+      const key = this.pool.nextKey();
+      const py = process.env.PYTHON_BIN || process.env.PYTHON || 'python3';
+      const script = path.join(rootDir, 'scripts', 'bt_collector.py');
+      const timeoutMs = Math.min(60000, Math.max(15000, Number(cfg.apiPool.timeoutMs || 10000) * 4));
+      this.logger.info('后台注销价更新', { netuid, api: key.name || key.id });
+      const result = await this.runPython(py, [
         script,
         '--endpoint', toWsEndpoint(key.endpoint),
         '--block-time-ms', String(cfg.collector.blockTimeMs || 12000),
-        '--exact-alpha-netuids', chunk.join(','),
+        '--exact-alpha-netuids', String(netuid),
         '--exact-only'
       ], timeoutMs);
-    }).filter(Boolean);
-    const results = await Promise.allSettled(jobs);
-    const merged = { alphaStaked: {}, collectorStats: { alphaStakedCount: 0, alphaStaked116: null } };
-    for (const result of results) {
-      if (result.status !== 'fulfilled') {
-        this.logger.warn('精确注销价分片采集失败', { error: result.reason?.message || String(result.reason) });
-        continue;
+      const alphaStaked = nullableNumber(result.alphaStaked?.[String(netuid)]);
+      if (alphaStaked != null && alphaStaked > 0) {
+        this.exactAlphaCache.set(netuid, { alphaStaked, updatedAt: Date.now() });
+        onUpdate?.({ netuid, alphaStaked, updatedAt: Date.now(), stats: this.exactAlphaStats() });
       }
-      Object.assign(merged.alphaStaked, result.value.alphaStaked || {});
+    } catch (error) {
+      this.logger.warn('后台注销价单项更新失败', { netuid, error: error.message });
+    } finally {
+      this.exactAlphaRunning = false;
     }
-    merged.collectorStats.alphaStakedCount = Object.keys(merged.alphaStaked).length;
-    merged.collectorStats.alphaStaked116 = nullableNumber(merged.alphaStaked['116']);
-    return merged.collectorStats.alphaStakedCount ? merged : null;
+  }
+
+  nextDueExactNetuid() {
+    const netuids = exactDeregistrationNetuids();
+    if (!netuids.length) return null;
+    const ttlMs = Math.max(60000, Number(process.env.EXACT_DEREGISTRATION_TTL_MS || 60 * 60 * 1000));
+    const now = Date.now();
+    for (let i = 0; i < netuids.length; i += 1) {
+      const index = (this.exactAlphaCursor + i) % netuids.length;
+      const netuid = netuids[index];
+      const cached = this.exactAlphaCache.get(netuid);
+      if (!cached || now - cached.updatedAt >= ttlMs) {
+        this.exactAlphaCursor = (index + 1) % netuids.length;
+        return netuid;
+      }
+    }
+    return null;
+  }
+
+  exactAlphaSnapshot() {
+    const alphaStaked = {};
+    for (const [netuid, item] of this.exactAlphaCache) {
+      alphaStaked[String(netuid)] = item.alphaStaked;
+    }
+    return {
+      alphaStaked,
+      collectorStats: this.exactAlphaStats()
+    };
+  }
+
+  exactAlphaStats() {
+    return {
+      alphaStakedCount: this.exactAlphaCache.size,
+      alphaStaked116: this.exactAlphaCache.get(116)?.alphaStaked ?? null
+    };
   }
 
   runPython(py, args, timeoutMs) {
@@ -99,10 +143,15 @@ export class PythonCollector {
   }
 }
 
+function exactDeregistrationNetuids() {
+  const configured = process.env.EXACT_DEREGISTRATION_NETUIDS;
+  return configured ? parseNetuidList(configured) : Array.from({ length: 128 }, (_, i) => i + 1);
+}
+
 function parseNetuidList(value) {
   const seen = new Set();
   return String(value || '').split(',')
-    .map((part) => Number(part.trim()))
+    .flatMap((part) => expandNetuidPart(part.trim()))
     .filter((netuid) => {
       if (!Number.isInteger(netuid) || netuid <= 0 || seen.has(netuid)) return false;
       seen.add(netuid);
@@ -110,12 +159,14 @@ function parseNetuidList(value) {
     });
 }
 
-function chunkRoundRobin(items, count) {
-  const chunks = Array.from({ length: Math.max(1, count) }, () => []);
-  items.forEach((item, index) => {
-    chunks[index % chunks.length].push(item);
-  });
-  return chunks;
+function expandNetuidPart(part) {
+  if (!part) return [];
+  const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (!range) return [Number(part)];
+  const start = Number(range[1]);
+  const end = Number(range[2]);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return [];
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
 }
 
 function mergeExactAlpha(data, exact) {

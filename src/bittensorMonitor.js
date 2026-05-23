@@ -91,6 +91,7 @@ export class BittensorMonitor {
 
   async start() {
     this.schedule();
+    this.python.startExactAlphaUpdater((update) => this.applyExactAlphaUpdate(update));
     this.connectWs().catch((error) => this.logger.warn('新区块订阅启动失败', { error: error.message }));
     this.refresh('启动采集').catch((error) => this.recordError(error));
   }
@@ -193,6 +194,25 @@ export class BittensorMonitor {
       lastAlert: this.state.lastAlert,
       errors: this.state.errors.slice(-10)
     };
+  }
+
+  applyExactAlphaUpdate(update) {
+    const netuid = Number(update?.netuid);
+    const alphaStaked = nullableNumber(update?.alphaStaked);
+    if (!Number.isFinite(netuid) || alphaStaked == null || alphaStaked <= 0) return;
+    const subnet = (this.state.subnets || []).find((item) => Number(item.netuid) === netuid);
+    if (!subnet) return;
+    subnet.alphaStaked = alphaStaked;
+    subnet.deregistrationPrice = computeDeregistrationPrice(subnet);
+    this.logger.info('注销价缓存更新', {
+      netuid,
+      alphaStaked,
+      deregistrationPrice: subnet.deregistrationPrice,
+      alphaStakedCount: update.stats?.alphaStakedCount,
+      alphaStaked116: update.stats?.alphaStaked116
+    });
+    this.persistState();
+    this.emit('refresh');
   }
 
   decorateMetrics(items) {
