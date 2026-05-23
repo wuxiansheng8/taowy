@@ -4,6 +4,7 @@ import json
 import sys
 
 SELECTIVE_ALPHA_STAKE_INDEX = 67
+DEFAULT_EXACT_ALPHA_NETUIDS = "116"
 
 
 def make_subtensor(endpoint):
@@ -117,51 +118,46 @@ def get_alpha_staked(sub, netuid):
 
 
 def get_alpha_staked_by_netuid(sub):
-    try:
-        totals = {}
-        rows = sub.substrate.query_map(
-            module="SubtensorModule",
-            storage_function="TotalHotkeyAlpha",
-        )
-        for key, value in rows:
-            parsed_key = plain_value(key)
-            if isinstance(parsed_key, (list, tuple)) and len(parsed_key) >= 2:
-                netuid = as_number(parsed_key[1])
-            else:
-                netuid = first_attr(parsed_key, ("netuid", "netUID"))
-                netuid = as_number(netuid)
-            amount = alpha_storage_as_number(value)
-            if netuid is not None and amount is not None:
-                totals[int(netuid)] = totals.get(int(netuid), 0.0) + amount
-        if totals:
-            return totals
-    except Exception:
-        pass
+    return {}
 
-    for method_name in (
-        "all_metagraphs",
-        "get_all_metagraphs",
-        "all_metagraphs_info",
-        "get_all_metagraphs_info",
-    ):
-        method = getattr(sub, method_name, None)
-        if not callable(method):
+
+def get_exact_alpha_staked(sub, netuid):
+    try:
+        total = 0.0
+        seen = False
+        keys = sub.substrate.query_map(
+            module="SubtensorModule",
+            storage_function="Keys",
+            params=[netuid],
+        )
+        for _uid, hotkey in keys:
+            value = sub.substrate.query(
+                module="SubtensorModule",
+                storage_function="TotalHotkeyAlpha",
+                params=[plain_value(hotkey), netuid],
+            )
+            amount = alpha_storage_as_number(value)
+            if amount is not None:
+                total += amount
+                seen = True
+        return total if seen else None
+    except Exception:
+        return None
+
+
+def parse_netuid_list(value):
+    items = []
+    for part in str(value or "").split(","):
+        part = part.strip()
+        if not part:
             continue
         try:
-            result = method()
+            netuid = int(part)
         except Exception:
             continue
-        totals = {}
-        for item in result or []:
-            if item is None:
-                continue
-            netuid = as_number(first_attr(item, ("netuid", "netUID", "uid", "id")))
-            total = alpha_stake_from_metagraph(item)
-            if netuid is not None and total is not None:
-                totals[int(netuid)] = total
-        if totals:
-            return totals
-    return {}
+        if netuid > 0 and netuid not in items:
+            items.append(netuid)
+    return items
 
 
 def get_immunity_period(sub, netuid):
@@ -211,6 +207,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--block-time-ms", type=int, default=12000)
+    parser.add_argument("--exact-alpha-netuids", default=DEFAULT_EXACT_ALPHA_NETUIDS)
     args = parser.parse_args()
 
     try:
@@ -222,7 +219,12 @@ def main():
             registration_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost"))
 
         dynamic = sub.all_subnets() or []
-        alpha_staked_by_netuid = get_alpha_staked_by_netuid(sub)
+        exact_alpha_netuids = parse_netuid_list(args.exact_alpha_netuids)
+        alpha_staked_by_netuid = {
+            netuid: total
+            for netuid in exact_alpha_netuids
+            if (total := get_exact_alpha_staked(sub, netuid)) is not None
+        }
         network_immunity_period = get_network_immunity_period(sub)
         next_prune = rpc_request(sub, "subnetInfo_getSubnetToPrune")
         if isinstance(next_prune, str):

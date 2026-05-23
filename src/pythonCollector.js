@@ -21,7 +21,8 @@ export class PythonCollector {
       const child = spawn(py, [
         script,
         '--endpoint', endpoint,
-        '--block-time-ms', String(cfg.collector.blockTimeMs || 12000)
+        '--block-time-ms', String(cfg.collector.blockTimeMs || 12000),
+        '--exact-alpha-netuids', String(process.env.EXACT_DEREGISTRATION_NETUIDS || '116')
       ], {
         cwd: rootDir,
         env: { ...process.env, PYTHONUTF8: '1' },
