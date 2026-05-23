@@ -208,18 +208,39 @@ def main():
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--block-time-ms", type=int, default=12000)
     parser.add_argument("--exact-alpha-netuids", default=DEFAULT_EXACT_ALPHA_NETUIDS)
+    parser.add_argument("--exact-only", action="store_true")
     args = parser.parse_args()
 
     try:
         sub = make_subtensor(args.endpoint)
         current_block = int(sub.block)
+        exact_alpha_netuids = parse_netuid_list(args.exact_alpha_netuids)
+        if args.exact_only:
+            alpha_staked_by_netuid = {
+                netuid: total
+                for netuid in exact_alpha_netuids
+                if (total := get_exact_alpha_staked(sub, netuid)) is not None
+            }
+            print(json.dumps({
+                "currentBlock": current_block,
+                "collectorStats": {
+                    "alphaStakedCount": len(alpha_staked_by_netuid),
+                    "alphaStaked116": alpha_staked_by_netuid.get(116),
+                },
+                "alphaStaked": {str(k): v for k, v in alpha_staked_by_netuid.items()}
+            }, ensure_ascii=False))
+            try:
+                sub.close()
+            except Exception:
+                pass
+            return
+
         try:
             registration_cost = as_number(sub.get_subnet_burn_cost())
         except Exception:
             registration_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost"))
 
         dynamic = sub.all_subnets() or []
-        exact_alpha_netuids = parse_netuid_list(args.exact_alpha_netuids)
         alpha_staked_by_netuid = {
             netuid: total
             for netuid in exact_alpha_netuids
