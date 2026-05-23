@@ -461,8 +461,12 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
     const immunityKnown = end != null && block > 0;
     const inImmunity = immunityKnown ? remaining > 0 : false;
     const raceEligible = immunityKnown ? !inImmunity : false;
+    const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
+    const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
+    const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
     const marketCapTao = nullableNumber(item.marketCap ?? item.market_cap ?? item.marketCapTao ?? item.market_cap_tao)
       ?? computeMarketCap(item);
+    const deregistrationPrice = computeDeregistrationPrice(item);
     const marketCapUsd = marketCapTao != null && taoUsdPrice != null ? marketCapTao * taoUsdPrice : null;
     return {
       netuid,
@@ -472,6 +476,10 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
       marketCap: marketCapTao,
       marketCapTao,
       marketCapUsd,
+      deregistrationPrice,
+      alphaIn,
+      alphaOut,
+      taoIn,
       registrationCost: nullableNumber(item.registrationCost ?? item.registration_cost ?? registrationCost),
       emaPrice: nullableNumber(item.emaPrice ?? item.ema_price ?? item.moving_price),
       volume1h: nullableNumber(item.volume1h ?? item.volume_1h),
@@ -495,6 +503,13 @@ function computeMarketCap(item) {
   const supply = (alphaIn != null ? alphaIn : 0) + (alphaOut != null ? alphaOut : 0);
   if (!Number.isFinite(price) || !Number.isFinite(supply) || supply <= 0) return null;
   return price * supply;
+}
+
+function computeDeregistrationPrice(item) {
+  const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
+  const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
+  if (!Number.isFinite(taoIn) || !Number.isFinite(alphaOut) || taoIn <= 0 || alphaOut <= 0) return null;
+  return taoIn / alphaOut;
 }
 
 function hasRealSubnetData(subnets) {
