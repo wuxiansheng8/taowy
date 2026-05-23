@@ -463,6 +463,7 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
     const raceEligible = immunityKnown ? !inImmunity : false;
     const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
     const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
+    const alphaStaked = nullableNumber(item.alphaStaked ?? item.alpha_staked ?? item.alphaStake ?? item.alpha_stake);
     const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
     const marketCapTao = nullableNumber(item.marketCap ?? item.market_cap ?? item.marketCapTao ?? item.market_cap_tao)
       ?? computeMarketCap(item);
@@ -479,6 +480,7 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
       deregistrationPrice,
       alphaIn,
       alphaOut,
+      alphaStaked,
       taoIn,
       registrationCost: nullableNumber(item.registrationCost ?? item.registration_cost ?? registrationCost),
       emaPrice: nullableNumber(item.emaPrice ?? item.ema_price ?? item.moving_price),
@@ -507,9 +509,11 @@ function computeMarketCap(item) {
 
 function computeDeregistrationPrice(item) {
   const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
+  const alphaStaked = nullableNumber(item.alphaStaked ?? item.alpha_staked ?? item.alphaStake ?? item.alpha_stake);
   const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
-  if (!Number.isFinite(taoIn) || !Number.isFinite(alphaOut) || taoIn <= 0 || alphaOut <= 0) return null;
-  return taoIn / alphaOut;
+  const denominator = alphaStaked ?? alphaOut;
+  if (!Number.isFinite(taoIn) || !Number.isFinite(denominator) || taoIn <= 0 || denominator <= 0) return null;
+  return taoIn / denominator;
 }
 
 function hasRealSubnetData(subnets) {

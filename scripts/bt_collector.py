@@ -3,6 +3,8 @@ import argparse
 import json
 import sys
 
+SELECTIVE_ALPHA_STAKE_INDEX = 67
+
 
 def make_subtensor(endpoint):
     import bittensor as bt
@@ -50,6 +52,53 @@ def first_attr(obj, names):
             value = getattr(obj, name)
             if value is not None:
                 return value
+        if isinstance(obj, dict) and name in obj and obj[name] is not None:
+            return obj[name]
+    return None
+
+
+def sum_numbers(values):
+    if values is None:
+        return None
+    if not isinstance(values, (list, tuple)):
+        return as_number(values)
+    total = 0.0
+    seen = False
+    for value in values:
+        parsed = as_number(value)
+        if parsed is None:
+            continue
+        total += parsed
+        seen = True
+    return total if seen else None
+
+
+def alpha_stake_from_metagraph(value):
+    alpha_stake = first_attr(value, ("alpha_stake", "alphaStake"))
+    return sum_numbers(alpha_stake)
+
+
+def get_alpha_staked(sub, netuid):
+    for method_name in ("get_selective_metagraph", "selective_metagraph"):
+        method = getattr(sub, method_name, None)
+        if not callable(method):
+            continue
+        for args, kwargs in (
+            ((netuid, [SELECTIVE_ALPHA_STAKE_INDEX]), {}),
+            ((), {"netuid": netuid, "metagraph_indexes": [SELECTIVE_ALPHA_STAKE_INDEX]}),
+            ((), {"netuid": netuid, "indexes": [SELECTIVE_ALPHA_STAKE_INDEX]}),
+        ):
+            try:
+                total = alpha_stake_from_metagraph(method(*args, **kwargs))
+                if total is not None:
+                    return total
+            except Exception:
+                pass
+
+    result = rpc_request(sub, "subnetInfo_getSelectiveMetagraph", [netuid, [SELECTIVE_ALPHA_STAKE_INDEX]])
+    total = alpha_stake_from_metagraph(result)
+    if total is not None:
+        return total
     return None
 
 
@@ -152,7 +201,8 @@ def main():
                 "lastStep": as_number(getattr(item, "last_step", None)),
                 "alphaIn": as_number(getattr(item, "alpha_in", None)),
                 "alphaOut": as_number(getattr(item, "alpha_out", None)),
-                "taoIn": as_number(getattr(item, "tao_in", None))
+                "taoIn": as_number(getattr(item, "tao_in", None)),
+                "alphaStaked": get_alpha_staked(sub, netuid)
             })
 
         output = {
