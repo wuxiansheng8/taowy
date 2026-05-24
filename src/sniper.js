@@ -26,6 +26,13 @@ class Sniper {
     this.monitor = monitor;
   }
 
+  clearProcessedNetuid(netuid) {
+    const n = Number(netuid);
+    this.processedNetuids.delete(n);
+    this.processedNetuids.delete(String(n));
+    this.logger.info(`[打新] 清除子网 #${netuid} 的已处理标记，允许重新购买。`);
+  }
+
   configure({ getConfig, logger, notifier, pool }) {
     if (getConfig) this.getConfig = getConfig;
     if (logger) this.logger = logger;
@@ -152,6 +159,7 @@ class Sniper {
   }
 
   async onNewSubnet(netuid, name, eventData = null) {
+    this.clearProcessedNetuid(netuid);
     return this.executeSubnetBuy(netuid, name, {
       requireEnabled: true,
       enabledKey: 'enabled',

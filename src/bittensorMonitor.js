@@ -284,6 +284,12 @@ export class BittensorMonitor {
               getSniper().onNewSubnet(netuid, `Subnet ${netuid}`, event.data?.toHuman?.() || event.data?.toString?.());
             }
           }
+          if (/SubnetRemoved|NetworkRemoved|SubnetPruned|NetworkPruned|Pruned/i.test(method)) {
+            const netuid = eventNumber(event.data, 0, 'netuid');
+            if (netuid !== null) {
+              getSniper().clearProcessedNetuid(netuid);
+            }
+          }
 
           this.state.lastAlert = payload;
           this.persistState();
