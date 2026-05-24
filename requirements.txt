@@ -1,1 +1,1 @@
-bittensor>=10.0.0
+substrate-interface>=1.8.1

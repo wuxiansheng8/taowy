@@ -307,6 +307,22 @@ class Sniper {
   async querySubnetHotkey(netuid) {
     const module = this.api.query.subtensorModule;
     if (!module) return null;
+
+    // Fast-path: query keys map for UID 0, 1, and 2 directly.
+    // This completes in exactly 1-3 direct storage queries instead of a full paged scan of the whole tree.
+    for (let uid = 0; uid < 3; uid++) {
+      try {
+        const key = await module.keys(netuid, uid);
+        if (this.storageHasValue(key)) {
+          const hotkey = key.toString();
+          if (hotkey && /^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey)) {
+            return { hotkey, source: `subtensorModule.keys(${netuid}, ${uid})`, trusted: true };
+          }
+        }
+      } catch {}
+    }
+
+    // Fallback to paged scanning if fast-path fails
     for (const method of ['keys', 'hotkeys', 'uids', 'neurons']) {
       try {
         if (!module[method]?.entries) continue;

@@ -8,23 +8,6 @@ export class PythonCollector {
     this.pool = pool;
     this.getConfig = getConfig;
     this.logger = logger;
-    this.exactAlphaCache = new Map();
-    this.exactAlphaTimer = null;
-    this.exactAlphaRunning = false;
-    this.exactAlphaCursor = 0;
-  }
-
-  startExactAlphaUpdater(onUpdate) {
-    clearInterval(this.exactAlphaTimer);
-    const intervalMs = Math.max(1000, Number(process.env.EXACT_DEREGISTRATION_INTERVAL_MS || 1000));
-    this.exactAlphaTimer = setInterval(() => {
-      this.tickExactAlpha(onUpdate).catch((error) => {
-        this.logger.warn('后台注销价更新失败', { error: error.message });
-      });
-    }, intervalMs);
-    this.tickExactAlpha(onUpdate).catch((error) => {
-      this.logger.warn('后台注销价启动更新失败', { error: error.message });
-    });
   }
 
   async collect() {
@@ -38,78 +21,9 @@ export class PythonCollector {
     const data = await this.runPython(py, [
       script,
       '--endpoint', endpoint,
-      '--block-time-ms', String(cfg.collector.blockTimeMs || 12000),
-      '--exact-alpha-netuids', ''
+      '--block-time-ms', String(cfg.collector.blockTimeMs || 12000)
     ], timeoutMs);
-    mergeExactAlpha(data, this.exactAlphaSnapshot());
     return data;
-  }
-
-  async tickExactAlpha(onUpdate) {
-    if (this.exactAlphaRunning) return;
-    const netuid = this.nextDueExactNetuid();
-    if (netuid == null) return;
-
-    this.exactAlphaRunning = true;
-    try {
-      const cfg = this.getConfig();
-      const key = this.pool.nextKey();
-      const py = process.env.PYTHON_BIN || process.env.PYTHON || 'python3';
-      const script = path.join(rootDir, 'scripts', 'bt_collector.py');
-      const timeoutMs = Math.min(60000, Math.max(15000, Number(cfg.apiPool.timeoutMs || 10000) * 4));
-      this.logger.info('后台注销价更新', { netuid, api: key.name || key.id });
-      const result = await this.runPython(py, [
-        script,
-        '--endpoint', toWsEndpoint(key.endpoint),
-        '--block-time-ms', String(cfg.collector.blockTimeMs || 12000),
-        '--exact-alpha-netuids', String(netuid),
-        '--exact-only'
-      ], timeoutMs);
-      const alphaStaked = nullableNumber(result.alphaStaked?.[String(netuid)]);
-      if (alphaStaked != null && alphaStaked > 0) {
-        this.exactAlphaCache.set(netuid, { alphaStaked, updatedAt: Date.now() });
-        onUpdate?.({ netuid, alphaStaked, updatedAt: Date.now(), stats: this.exactAlphaStats() });
-      }
-    } catch (error) {
-      this.logger.warn('后台注销价单项更新失败', { netuid, error: error.message });
-    } finally {
-      this.exactAlphaRunning = false;
-    }
-  }
-
-  nextDueExactNetuid() {
-    const netuids = exactDeregistrationNetuids();
-    if (!netuids.length) return null;
-    const ttlMs = Math.max(60000, Number(process.env.EXACT_DEREGISTRATION_TTL_MS || 60 * 60 * 1000));
-    const now = Date.now();
-    for (let i = 0; i < netuids.length; i += 1) {
-      const index = (this.exactAlphaCursor + i) % netuids.length;
-      const netuid = netuids[index];
-      const cached = this.exactAlphaCache.get(netuid);
-      if (!cached || now - cached.updatedAt >= ttlMs) {
-        this.exactAlphaCursor = (index + 1) % netuids.length;
-        return netuid;
-      }
-    }
-    return null;
-  }
-
-  exactAlphaSnapshot() {
-    const alphaStaked = {};
-    for (const [netuid, item] of this.exactAlphaCache) {
-      alphaStaked[String(netuid)] = item.alphaStaked;
-    }
-    return {
-      alphaStaked,
-      collectorStats: this.exactAlphaStats()
-    };
-  }
-
-  exactAlphaStats() {
-    return {
-      alphaStakedCount: this.exactAlphaCache.size,
-      alphaStaked116: this.exactAlphaCache.get(116)?.alphaStaked ?? null
-    };
   }
 
   runPython(py, args, timeoutMs) {
@@ -169,17 +83,6 @@ function expandNetuidPart(part) {
   return Array.from({ length: end - start + 1 }, (_, i) => start + i);
 }
 
-function mergeExactAlpha(data, exact) {
-  const alphaStaked = exact.alphaStaked || {};
-  for (const subnet of data.subnets || []) {
-    const value = nullableNumber(alphaStaked[String(subnet.netuid)]);
-    if (value != null) subnet.alphaStaked = value;
-  }
-  data.collectorStats = {
-    ...(data.collectorStats || {}),
-    ...(exact.collectorStats || {})
-  };
-}
 
 function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;

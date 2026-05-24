@@ -133,8 +133,8 @@ function renderCards(items) {
       <div class="card-metrics">
         <div><span>当前市值</span><b>${fmtUsd(s.marketCapUsd)}</b></div>
         <div><span>1小时交易量</span><b>${fmtFixed(s.volume1h, 2)}</b></div>
-        <div><span>24小时交易量</span><b>${fmtFixed(s.volume24h, 2)}</b></div>
-        <div><span>注销价格</span><b>${fmtTokenPrice(s.deregistrationPrice ?? s.emaPrice)}</b></div>
+        <div><span>EMA 价格</span><b>${fmtTokenPrice(s.emaPrice)}</b></div>
+        <div><span>清算价格</span><b>${fmtTokenPrice(s.liquidationPrice)}</b></div>
       </div>
     </article>
   `).join('');
@@ -143,7 +143,6 @@ function renderCards(items) {
 function sortSubnets(items, sort) {
   return [...items].sort((a, b) => {
     if (sort === 'volume1h') return num(b.volume1h, -1) - num(a.volume1h, -1) || num(a.netuid, 0) - num(b.netuid, 0);
-    if (sort === 'volume24h') return num(b.volume24h, -1) - num(a.volume24h, -1) || num(a.netuid, 0) - num(b.netuid, 0);
     if (sort === 'marketCap') return marketCapValue(b) - marketCapValue(a) || num(a.netuid, 0) - num(b.netuid, 0);
     return num(a.netuid, 0) - num(b.netuid, 0);
   });

@@ -91,7 +91,6 @@ export class BittensorMonitor {
 
   async start() {
     this.schedule();
-    this.python.startExactAlphaUpdater((update) => this.applyExactAlphaUpdate(update));
     this.connectWs().catch((error) => this.logger.warn('新区块订阅启动失败', { error: error.message }));
     this.refresh('启动采集').catch((error) => this.recordError(error));
   }
@@ -121,9 +120,7 @@ export class BittensorMonitor {
       this.applyCollected(data, reason);
       this.logger.info(`${reason}完成`, {
         block: this.state.currentBlock,
-        subnetCount: this.state.race.currentSubnetCount,
-        alphaStakedCount: data.collectorStats?.alphaStakedCount,
-        alphaStaked116: data.collectorStats?.alphaStaked116
+        subnetCount: this.state.race.currentSubnetCount
       });
       this.persistState();
       this.emit('refresh');
@@ -195,24 +192,6 @@ export class BittensorMonitor {
     };
   }
 
-  applyExactAlphaUpdate(update) {
-    const netuid = Number(update?.netuid);
-    const alphaStaked = nullableNumber(update?.alphaStaked);
-    if (!Number.isFinite(netuid) || alphaStaked == null || alphaStaked <= 0) return;
-    const subnet = (this.state.subnets || []).find((item) => Number(item.netuid) === netuid);
-    if (!subnet) return;
-    subnet.alphaStaked = alphaStaked;
-    subnet.deregistrationPrice = computeDeregistrationPrice(subnet);
-    this.logger.info('注销价缓存更新', {
-      netuid,
-      alphaStaked,
-      deregistrationPrice: subnet.deregistrationPrice,
-      alphaStakedCount: update.stats?.alphaStakedCount,
-      alphaStaked116: update.stats?.alphaStaked116
-    });
-    this.persistState();
-    this.emit('refresh');
-  }
 
   decorateMetrics(items) {
     const now = Date.now();
@@ -453,16 +432,39 @@ export class BittensorMonitor {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch(TAO_USD_PRICE_URL, {
-        headers: { accept: 'application/json' },
+      try {
+        const res = await fetch(TAO_USD_PRICE_URL, {
+          headers: { accept: 'application/json' },
+          signal: controller.signal
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const value = nullableNumber(json?.bittensor?.usd);
+          if (value != null && value > 0) {
+            this.taoUsdCache = { value, fetchedAt: now };
+            return value;
+          }
+        }
+      } catch (cgError) {
+        this.logger.warn('CoinGecko TAO 价格获取失败，尝试备用源', { error: cgError.message });
+      }
+
+      // Fallback to Binance
+      const binanceRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=TAOUSDT', {
         signal: controller.signal
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const value = nullableNumber(json?.bittensor?.usd);
-      if (value == null || value <= 0) throw new Error('价格响应缺少 bittensor.usd');
-      this.taoUsdCache = { value, fetchedAt: now };
-      return value;
+      if (!binanceRes.ok) throw new Error(`Binance HTTP ${binanceRes.status}`);
+      const binanceJson = await binanceRes.json();
+      const binanceValue = nullableNumber(binanceJson?.price);
+      if (binanceValue == null || binanceValue <= 0) throw new Error('Binance 价格响应无效');
+      this.taoUsdCache = { value: binanceValue, fetchedAt: now };
+      return binanceValue;
+    } catch (error) {
+      this.logger.warn('所有 TAO 价格接口均获取失败', { error: error.message });
+      if (this.taoUsdCache.value != null) {
+        return this.taoUsdCache.value;
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
     }
@@ -488,7 +490,7 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
     const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
     const marketCapTao = nullableNumber(item.marketCap ?? item.market_cap ?? item.marketCapTao ?? item.market_cap_tao)
       ?? computeMarketCap(item);
-    const deregistrationPrice = computeDeregistrationPrice(item);
+    const liquidationPrice = computeLiquidationPrice(item);
     const marketCapUsd = marketCapTao != null && taoUsdPrice != null ? marketCapTao * taoUsdPrice : null;
     return {
       netuid,
@@ -498,7 +500,8 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
       marketCap: marketCapTao,
       marketCapTao,
       marketCapUsd,
-      deregistrationPrice,
+      liquidationPrice,
+      deregistrationPrice: liquidationPrice, // For backward compatibility
       alphaIn,
       alphaOut,
       alphaStaked,
@@ -528,12 +531,13 @@ function computeMarketCap(item) {
   return price * supply;
 }
 
-function computeDeregistrationPrice(item) {
+function computeLiquidationPrice(item) {
   const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
-  const alphaStaked = nullableNumber(item.alphaStaked ?? item.alpha_staked ?? item.alphaStake ?? item.alpha_stake);
+  const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
   const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
-  const denominator = alphaStaked ?? alphaOut;
-  if (!Number.isFinite(taoIn) || !Number.isFinite(denominator) || taoIn <= 0 || denominator <= 0) return null;
+  if (!Number.isFinite(taoIn) || !Number.isFinite(alphaIn) || !Number.isFinite(alphaOut) || taoIn <= 0) return null;
+  const denominator = alphaIn + alphaOut;
+  if (denominator <= 0) return null;
   return taoIn / denominator;
 }
 
