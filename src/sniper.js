@@ -164,6 +164,13 @@ class Sniper {
 
   async onSubnetNameChanged(netuid, name, oldName) {
     const numericNetuid = Number(netuid);
+    const cleanName = String(name || '').trim();
+    const defaultPattern = new RegExp(`^Subnet\\s*${numericNetuid}$`, 'i');
+    if (defaultPattern.test(cleanName)) {
+      this.logger.info(`[改名打新] 子网 #${netuid} 名称变更为默认值 "${name}"，跳过打新触发。`);
+      return { ok: false, skipped: true, reason: '目标名称为默认子网名' };
+    }
+
     this.logger.info(`检测到子网 #${netuid} 名称变更: "${oldName}" -> "${name}"，触发自动打新...`);
     return this.executeSubnetBuy(numericNetuid, name, {
       requireEnabled: true,
