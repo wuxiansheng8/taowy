@@ -66,6 +66,7 @@ export class BittensorMonitor {
     this.taoUsdCache = { value: null, fetchedAt: 0 };
     this.refreshPromise = null;
     this.restoreState();
+    getSniper().setMonitor(this);
   }
 
   onUpdate(listener) {

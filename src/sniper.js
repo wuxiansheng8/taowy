@@ -19,6 +19,11 @@ class Sniper {
     this.loadHotkeyCache();
     this.isInitializing = false;
     this.processedNetuids = new Set();
+    this.monitor = null;
+  }
+
+  setMonitor(monitor) {
+    this.monitor = monitor;
   }
 
   configure({ getConfig, logger, notifier, pool }) {
@@ -177,6 +182,16 @@ class Sniper {
   }
 
   async executeSubnetBuy(netuid, name, options = {}) {
+    if (!this.api || !this.api.isConnected) {
+      if (this.monitor) {
+        this.logger.warn(`[打新] 检测到 WebSocket 未连接，正在尝试紧急重连并切换节点...`);
+        try {
+          await this.monitor.connectWs('打新紧急重连');
+        } catch (err) {
+          this.logger.error('[打新] 紧急重连失败:', err.message);
+        }
+      }
+    }
     if (!this.api) throw new Error('链 API 尚未连接，无法发起购买');
     const target = await this.resolveHotkey(netuid, options.eventData);
     if (!target?.hotkey) {
@@ -232,6 +247,16 @@ class Sniper {
     while (attempts <= maxRetries) {
       attempts++;
       try {
+        if (!this.api || !this.api.isConnected) {
+          if (this.monitor) {
+            this.logger.warn(`[打新] 钱包【${walletName}】尝试期间发现连接断开，触发紧急重连...`);
+            try {
+              await this.monitor.connectWs('交易紧急重连');
+            } catch (err) {
+              this.logger.error('[打新] 交易重连失败:', err.message);
+            }
+          }
+        }
         this.logger.info(`[打新] 钱包【${walletName}】并发 ${burstIndex} 尝试购买 #${netuid} (第 ${attempts} 次)...`);
 
         const tx = this.api.tx.subtensorModule.addStake(targetHotkey, netuid, amountBigInt);
