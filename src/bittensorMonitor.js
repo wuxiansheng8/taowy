@@ -57,7 +57,6 @@ export class BittensorMonitor {
     this.state = structuredClone(ZERO_STATE);
     this.clients = new Set();
     this.pollTimer = null;
-    this.verifyTimer = null;
     this.wsRotateTimer = null;
     this.api = null;
     this.wsConnecting = null;
@@ -97,11 +96,9 @@ export class BittensorMonitor {
 
   schedule() {
     clearInterval(this.pollTimer);
-    clearInterval(this.verifyTimer);
     clearInterval(this.wsRotateTimer);
     const cfg = this.getConfig().collector;
     this.pollTimer = setInterval(() => this.refresh('定时采集').catch((e) => this.recordError(e)), cfg.pollIntervalMs || 60000);
-    this.verifyTimer = setInterval(() => this.verifySubnetList().catch((e) => this.recordError(e)), cfg.verifyIntervalMs || 300000);
     const wsRotateIntervalMs = Math.max(10 * 60 * 1000, Number(cfg.wsRotateIntervalMs || 30 * 60 * 1000));
     this.wsRotateTimer = setInterval(() => this.connectWs('定时轮换').catch((e) => this.recordError(e)), wsRotateIntervalMs);
   }
