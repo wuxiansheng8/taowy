@@ -42,7 +42,6 @@ export const defaultConfig = {
   sniper: {
     enabled: false,
     amountTao: 1.0,
-    maxSlippage: 10,
     maxRetries: 5,
     burstCount: 1,
     retryIntervalMs: 200,

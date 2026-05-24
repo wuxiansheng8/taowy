@@ -222,7 +222,6 @@ function populateSniperForm(sniper = {}) {
   const form = $('#sniperForm');
   form.sniperEnabled.checked = Boolean(sniper.enabled);
   form.sniperAmountTao.value = sniper.amountTao ?? 1;
-  form.sniperMaxSlippage.value = sniper.maxSlippage ?? 10;
   form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
   form.sniperBurstCount.value = sniper.burstCount ?? 1;
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
@@ -448,7 +447,6 @@ function collectSniperSettings(form) {
   return {
     enabled: form.sniperEnabled.checked,
     amountTao: Number(form.sniperAmountTao.value),
-    maxSlippage: Number(form.sniperMaxSlippage.value),
     maxRetries: Number(form.sniperMaxRetries.value),
     burstCount: Number(form.sniperBurstCount.value),
     retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
