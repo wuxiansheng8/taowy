@@ -32,6 +32,7 @@ const next = {
   github: { ...(current.github || {}), repo },
   sniper: {
     enabled: false,
+    renameEnabled: false,
     amountTao: 1.0,
     maxRetries: 5,
     burstCount: 1,

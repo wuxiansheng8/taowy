@@ -154,6 +154,7 @@ class Sniper {
   async onNewSubnet(netuid, name, eventData = null) {
     return this.executeSubnetBuy(netuid, name, {
       requireEnabled: true,
+      enabledKey: 'enabled',
       dedupe: true,
       label: '多钱包打新',
       triggerText: '多钱包打新触发',
@@ -166,6 +167,7 @@ class Sniper {
     this.logger.info(`检测到子网 #${netuid} 名称变更: "${oldName}" -> "${name}"，触发自动打新...`);
     return this.executeSubnetBuy(numericNetuid, name, {
       requireEnabled: true,
+      enabledKey: 'renameEnabled',
       dedupe: true,
       label: '改名打新',
       triggerText: `子网改名打新触发 (${oldName} -> ${name})`
@@ -203,7 +205,10 @@ class Sniper {
     const config = this.getConfig();
     const settings = config.sniper;
 
-    if (options.requireEnabled && !settings?.enabled) return { ok: false, skipped: true, reason: '自动打新未启用' };
+    const enabledKey = options.enabledKey || 'enabled';
+    if (options.requireEnabled && !settings?.[enabledKey]) {
+      return { ok: false, skipped: true, reason: `${options.label || '自动打新'}未启用` };
+    }
     if (options.dedupe && this.processedNetuids.has(netuid)) return { ok: false, skipped: true, reason: '子网已处理' };
     if (options.dedupe) this.processedNetuids.add(netuid);
 

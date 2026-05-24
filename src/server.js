@@ -241,6 +241,7 @@ function sanitizeSettings(current, body) {
   }
   if (body.sniper) {
     next.sniper.enabled = Boolean(body.sniper.enabled);
+    next.sniper.renameEnabled = Boolean(body.sniper.renameEnabled);
     next.sniper.amountTao = clamp(body.sniper.amountTao, 0.001, 10000, current.sniper.amountTao);
     next.sniper.maxRetries = clamp(body.sniper.maxRetries, 0, 1000, current.sniper.maxRetries);
     next.sniper.burstCount = Math.floor(clamp(body.sniper.burstCount, 1, 50, current.sniper.burstCount || 1));

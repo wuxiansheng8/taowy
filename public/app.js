@@ -221,6 +221,7 @@ async function loadSettings() {
 function populateSniperForm(sniper = {}) {
   const form = $('#sniperForm');
   form.sniperEnabled.checked = Boolean(sniper.enabled);
+  form.sniperRenameEnabled.checked = Boolean(sniper.renameEnabled);
   form.sniperAmountTao.value = sniper.amountTao ?? 1;
   form.sniperMaxRetries.value = sniper.maxRetries ?? 5;
   form.sniperBurstCount.value = sniper.burstCount ?? 1;
@@ -446,6 +447,7 @@ $('#manualBuyBtn').addEventListener('click', async () => {
 function collectSniperSettings(form) {
   return {
     enabled: form.sniperEnabled.checked,
+    renameEnabled: form.sniperRenameEnabled.checked,
     amountTao: Number(form.sniperAmountTao.value),
     maxRetries: Number(form.sniperMaxRetries.value),
     burstCount: Number(form.sniperBurstCount.value),
