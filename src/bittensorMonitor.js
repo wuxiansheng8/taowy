@@ -297,10 +297,10 @@ export class BittensorMonitor {
           this.logger.info(`区块 ${blockNumber}：${translated.label}`, payload);
         }
       }
-      if (/^subtensor(Module)?$/i.test(section) && /^(StakeAdded|StakeRemoved|StakeSwapped)$/i.test(method)) {
+      if (/^subtensor(Module)?$/i.test(section) && /^(StakeAdded|StakeRemoved)$/i.test(method)) {
         const human = event.data?.toHuman?.() || event.data?.toString?.();
         const raw = event.data?.toJSON?.() || human;
-        const flow = flowFromStakeEvent(method, raw, events, index);
+        const flow = flowFromStakeEvent(method, raw);
         if (flow) {
           this.state.chainFlow.recent.push({
             ts: Date.now(),
@@ -572,47 +572,19 @@ function translateSubtensorEvent(method, fallback) {
   return { label: fallback, lifecycle: false };
 }
 
-function flowFromStakeEvent(method, data, blockEvents = [], eventIndex = -1) {
+function flowFromStakeEvent(method, data) {
   const name = String(method || '');
   if (/^StakeAdded$/i.test(name)) {
     const netuid = eventNumber(data, 4, 'netuid');
     if (isRootNetuid(netuid)) return null;
-    if (hasNearbyStakeSwap(blockEvents, eventIndex, netuid, 0)) return null;
     return buildFlow('stake', eventTao(data, 2, 'tao_amount'), netuid);
   }
   if (/^StakeRemoved$/i.test(name)) {
     const netuid = eventNumber(data, 4, 'netuid');
     if (isRootNetuid(netuid)) return null;
-    if (hasNearbyStakeSwap(blockEvents, eventIndex, netuid, 0)) return null;
     return buildFlow('unstake', eventTao(data, 2, 'tao_amount'), netuid);
   }
-  if (/^StakeSwapped$/i.test(name)) {
-    const origin = eventNumber(data, 2, 'origin_netuid');
-    const destination = eventNumber(data, 3, 'destination_netuid');
-    const amountTao = eventTao(data, 4, 'tao_amount');
-    if (isRootNetuid(origin) && !isRootNetuid(destination)) {
-      return buildFlow('stake', amountTao, destination);
-    }
-    if (!isRootNetuid(origin) && isRootNetuid(destination)) {
-      return buildFlow('unstake', amountTao, origin);
-    }
-  }
   return null;
-}
-
-function hasNearbyStakeSwap(blockEvents, eventIndex, origin, destination) {
-  const start = Math.max(0, eventIndex - 3);
-  const end = Math.min(blockEvents.length - 1, eventIndex + 3);
-  for (let i = start; i <= end; i++) {
-    if (i === eventIndex) continue;
-    const event = blockEvents[i]?.event;
-    if (!event || !/^subtensor(Module)?$/i.test(event.section) || !/^StakeSwapped$/i.test(event.method)) continue;
-    const data = event.data?.toJSON?.() || event.data?.toHuman?.() || event.data?.toString?.();
-    if (eventNumber(data, 2, 'origin_netuid') === Number(origin) && eventNumber(data, 3, 'destination_netuid') === Number(destination)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function buildFlow(flowType, amountTao, netuid) {
