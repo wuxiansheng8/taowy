@@ -156,6 +156,17 @@ class Sniper {
     });
   }
 
+  async onSubnetNameChanged(netuid, name, oldName) {
+    const numericNetuid = Number(netuid);
+    this.logger.info(`检测到子网 #${netuid} 名称变更: "${oldName}" -> "${name}"，触发自动打新...`);
+    return this.executeSubnetBuy(numericNetuid, name, {
+      requireEnabled: true,
+      dedupe: true,
+      label: '改名打新',
+      triggerText: `子网改名打新触发 (${oldName} -> ${name})`
+    });
+  }
+
   async buySubnet(netuid, name = null) {
     return this.executeSubnetBuy(netuid, name || `Subnet ${netuid}`, {
       requireEnabled: false,

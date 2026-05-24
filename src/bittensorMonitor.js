@@ -268,7 +268,7 @@ export class BittensorMonitor {
       const section = event.section || '';
       const method = event.method || '';
       const text = `${section}.${method}`;
-      if (/subtensor/i.test(section) && /(register|deregister|subnet|network|prune)/i.test(method)) {
+      if (/subtensor/i.test(section) && /(register|deregister|subnet|network|prune|identity)/i.test(method)) {
         const translated = translateSubtensorEvent(method, text);
         const payload = {
           blockNumber,
@@ -398,6 +398,15 @@ export class BittensorMonitor {
     const diff = diffSubnetSnapshots(this.lastSubnetSnapshot, next);
     if (diff.added.length || diff.removed.length || diff.changed.length) {
       if (diff.added.length) this.recordLaunches(diff.added, reason, currentBlock);
+      if (diff.changed.length) {
+        for (const item of diff.changed) {
+          const nameChange = item.fields.find(f => f.field === 'name');
+          if (nameChange) {
+            getSniper().onSubnetNameChanged(item.netuid, nameChange.after, nameChange.before)
+              .catch(err => this.logger.error('子网改名打新执行异常:', err));
+          }
+        }
+      }
       this.notifier.alert(formatSubnetDiffAlert(diff), diff).catch(() => {});
     }
   }
@@ -562,6 +571,7 @@ function translateSubtensorEvent(method, fallback) {
   const name = String(method || '');
   if (/NeuronRegistered/i.test(name)) return { label: '子网节点注册', lifecycle: false };
   if (/NeuronDeregistered|NeuronRemoved/i.test(name)) return { label: '子网节点注销', lifecycle: false };
+  if (/Identity/i.test(name)) return { label: '子网信息更新', lifecycle: true };
   if (/SubnetAdded|NetworkAdded/i.test(name)) return { label: '新子网创建', lifecycle: true };
   if (/SubnetRemoved|NetworkRemoved/i.test(name)) return { label: '子网移除', lifecycle: true };
   if (/SubnetPruned|NetworkPruned|Pruned/i.test(name)) return { label: '子网被淘汰', lifecycle: true };
