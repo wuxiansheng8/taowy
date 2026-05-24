@@ -222,7 +222,7 @@ class Sniper {
     const activePairs = [];
     const walletSettings = settings.wallets || {};
     const amountTao = settings.amountTao || 1.0;
-    const maxRetries = settings.maxRetries === 0 ? Infinity : (settings.maxRetries || 5);
+    const maxRetries = settings.maxRetries === undefined || settings.maxRetries === null ? 5 : Number(settings.maxRetries);
     const burstCount = Math.max(1, Math.floor(Number(settings.burstCount || 1)));
     const retryInterval = settings.retryIntervalMs ?? 200;
     const txTimeoutMs = settings.txTimeoutMs || 5000;
