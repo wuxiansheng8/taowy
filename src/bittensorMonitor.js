@@ -154,6 +154,17 @@ export class BittensorMonitor {
     const taoUsdPrice = nullableNumber(data.taoUsdPrice ?? this.state.taoUsdPrice);
     const subnets = normalizeSubnets(this.decorateMetrics(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg, taoUsdPrice);
     const ranked = [...subnets].filter((s) => s.raceEligible).sort((a, b) => num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity));
+    const nextPrune = data.nextPruneCandidate ?? ranked[0]?.netuid ?? null;
+    const bottom10Netuids = new Set(ranked.slice(0, 10).map(s => s.netuid));
+    for (const s of subnets) {
+      if (s.inImmunity) {
+        s.riskLevel = 'immune';
+      } else if (s.netuid === nextPrune || bottom10Netuids.has(s.netuid)) {
+        s.riskLevel = 'warning';
+      } else {
+        s.riskLevel = 'watch';
+      }
+    }
     const immune = subnets.filter((s) => s.inImmunity).sort((a, b) => num(a.immunityEndsAtBlock, 0) - num(b.immunityEndsAtBlock, 0));
     const snapshot = buildSubnetSnapshot(subnets);
     this.detectSubnetDiff(snapshot, reason, data.currentBlock || this.state.currentBlock);
@@ -533,12 +544,9 @@ function computeMarketCap(item) {
 
 function computeLiquidationPrice(item) {
   const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
-  const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
   const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
-  if (!Number.isFinite(taoIn) || !Number.isFinite(alphaIn) || !Number.isFinite(alphaOut) || taoIn <= 0) return null;
-  const denominator = alphaIn + alphaOut;
-  if (denominator <= 0) return null;
-  return taoIn / denominator;
+  if (!Number.isFinite(taoIn) || !Number.isFinite(alphaOut) || taoIn <= 0 || alphaOut <= 0) return null;
+  return taoIn / alphaOut;
 }
 
 function hasRealSubnetData(subnets) {
