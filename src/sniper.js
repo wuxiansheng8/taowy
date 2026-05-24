@@ -18,7 +18,7 @@ class Sniper {
     this.hotkeyByNetuid = new Map();
     this.loadHotkeyCache();
     this.isInitializing = false;
-    this.processedNetuids = new Set();
+    this.processedNetuids = new Map();
     this.monitor = null;
   }
 
@@ -224,8 +224,13 @@ class Sniper {
     if (options.requireEnabled && !settings?.[enabledKey]) {
       return { ok: false, skipped: true, reason: `${options.label || '自动打新'}未启用` };
     }
-    if (options.dedupe && this.processedNetuids.has(netuid)) return { ok: false, skipped: true, reason: '子网已处理' };
-    if (options.dedupe) this.processedNetuids.add(netuid);
+    if (options.dedupe) {
+      const processedAt = this.processedNetuids.get(netuid);
+      if (processedAt && (Date.now() - processedAt < 24 * 60 * 60 * 1000)) {
+        return { ok: false, skipped: true, reason: '子网已在24小时内处理过' };
+      }
+    }
+    if (options.dedupe) this.processedNetuids.set(netuid, Date.now());
 
     const activePairs = [];
     const walletSettings = settings.wallets || {};
