@@ -10,6 +10,7 @@ class Sniper {
     this.logger = console;
     this.notifier = { alert: async () => {} };
     this.api = null;
+    this.pool = null;
     this.keyring = null;
     this.walletMap = new Map();
     this.nextNonceByAddress = new Map();
@@ -20,10 +21,11 @@ class Sniper {
     this.processedNetuids = new Set();
   }
 
-  configure({ getConfig, logger, notifier }) {
+  configure({ getConfig, logger, notifier, pool }) {
     if (getConfig) this.getConfig = getConfig;
     if (logger) this.logger = logger;
     if (notifier) this.notifier = notifier;
+    if (pool) this.pool = pool;
   }
 
   async init(api, { force = false } = {}) {
@@ -269,13 +271,22 @@ class Sniper {
     }
     const cached = this.hotkeyByNetuid.get(numericNetuid);
     if (cached?.verified && Date.now() - cached.updatedAt < HOTKEY_CACHE_TTL_MS) return cached;
-    const resolved = await this.querySubnetHotkey(netuid);
-    if (resolved?.hotkey && await this.verifyHotkey(netuid, resolved.hotkey)) {
-      const verified = { ...resolved, verified: true, updatedAt: Date.now() };
-      this.hotkeyByNetuid.set(numericNetuid, verified);
-      this.saveHotkeyCache();
-      this.logger.info(`子网 #${netuid} 自动选择 hotkey`, resolved);
-      return verified;
+
+    const maxPolls = 100;
+    const pollIntervalMs = 300;
+    for (let attempt = 1; attempt <= maxPolls; attempt++) {
+      this.logger.info(`[打新] 正在尝试解析子网 #${netuid} 的 Hotkey (第 ${attempt}/${maxPolls} 次)...`);
+      const resolved = await this.querySubnetHotkey(netuid);
+      if (resolved?.hotkey) {
+        const verified = { ...resolved, verified: true, updatedAt: Date.now() };
+        this.hotkeyByNetuid.set(numericNetuid, verified);
+        this.saveHotkeyCache();
+        this.logger.info(`[打新] 子网 #${netuid} 成功解析出 hotkey: ${resolved.hotkey} (尝试了 ${attempt} 次)`);
+        return verified;
+      }
+      if (attempt < maxPolls) {
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      }
     }
     return null;
   }
@@ -312,14 +323,24 @@ class Sniper {
     // This completes in exactly 1-3 direct storage queries instead of a full paged scan of the whole tree.
     for (let uid = 0; uid < 3; uid++) {
       try {
-        const key = await module.keys(netuid, uid);
-        if (this.storageHasValue(key)) {
-          const hotkey = key.toString();
+        const keyHex = module.keys.key(netuid, uid);
+        let raw;
+        if (this.pool) {
+          raw = await this.pool.rpc('state_getStorage', [keyHex]);
+        } else {
+          const res = await module.keys(netuid, uid);
+          raw = res.toHex();
+        }
+
+        if (raw && raw !== '0x') {
+          const hotkey = this.api.createType('AccountId', raw).toString();
           if (hotkey && /^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey)) {
             return { hotkey, source: `subtensorModule.keys(${netuid}, ${uid})`, trusted: true };
           }
         }
-      } catch {}
+      } catch (err) {
+        this.logger.warn(`查询 UID ${uid} 的 Hotkey 失败，进行重试或轮询`, { error: err.message });
+      }
     }
 
     // Fallback to paged scanning if fast-path fails

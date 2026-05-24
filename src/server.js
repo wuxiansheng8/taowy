@@ -20,7 +20,7 @@ const logger = new AppLogger();
 const getConfig = () => config;
 const pool = new DwellirPool(getConfig, logger);
 const notifier = new Notifier(getConfig, logger);
-configureSniper({ getConfig, logger, notifier });
+configureSniper({ getConfig, logger, notifier, pool });
 const monitor = new BittensorMonitor({ pool, getConfig, logger, notifier });
 const app = express();
 
