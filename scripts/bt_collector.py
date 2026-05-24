@@ -73,7 +73,8 @@ def main():
         current_block = sub.get_block_number(sub.get_chain_head())
 
         try:
-            registration_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost"))
+            raw_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost"))
+            registration_cost = raw_cost / 1e9 if raw_cost is not None else None
         except Exception:
             registration_cost = None
 
