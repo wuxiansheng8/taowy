@@ -245,6 +245,13 @@ export class BittensorMonitor {
     const provider = new WsProvider(endpoint, 5000);
     this.api = await ApiPromise.create({ provider, throwOnConnect: false });
 
+    const apiInstance = this.api;
+    apiInstance.on('disconnected', () => {
+      if (this.api !== apiInstance) return; // 忽略已被替换的老实例
+      this.logger.warn('[监控] 检测到 WebSocket 连接已断开，启动自愈轮换...');
+      this.connectWs('连接断开自愈').catch((err) => this.logger.error('[监控] 断线自愈重连失败:', err.message));
+    });
+
     // 初始化打新钱包
     getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
 
