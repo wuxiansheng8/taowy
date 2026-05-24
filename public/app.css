@@ -546,6 +546,16 @@ tr:hover td {
   color: var(--muted);
 }
 
+.sniper-section-title {
+  margin: 12px 0 4px;
+  font-family: "Outfit", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cyan);
+  border-left: 3px solid var(--cyan);
+  padding-left: 8px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));

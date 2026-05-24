@@ -227,6 +227,13 @@ function populateSniperForm(sniper = {}) {
   form.sniperBurstCount.value = sniper.burstCount ?? 1;
   form.sniperRetryIntervalMs.value = sniper.retryIntervalMs ?? 200;
   form.sniperTxTimeoutMs.value = sniper.txTimeoutMs ?? 5000;
+
+  form.sniperRenameAmountTao.value = sniper.renameAmountTao ?? 1;
+  form.sniperRenameMaxRetries.value = sniper.renameMaxRetries ?? 5;
+  form.sniperRenameBurstCount.value = sniper.renameBurstCount ?? 1;
+  form.sniperRenameRetryIntervalMs.value = sniper.renameRetryIntervalMs ?? 200;
+  form.sniperRenameTxTimeoutMs.value = sniper.renameTxTimeoutMs ?? 5000;
+
   form.sniperDefaultHotkey.value = sniper.defaultHotkey || '';
   renderSniperWallets(sniper.walletList || []);
   renderHotkeyCache(sniper.hotkeyCache || []);
@@ -453,6 +460,13 @@ function collectSniperSettings(form) {
     burstCount: Number(form.sniperBurstCount.value),
     retryIntervalMs: Number(form.sniperRetryIntervalMs.value),
     txTimeoutMs: Number(form.sniperTxTimeoutMs.value),
+
+    renameAmountTao: Number(form.sniperRenameAmountTao.value),
+    renameMaxRetries: Number(form.sniperRenameMaxRetries.value),
+    renameBurstCount: Number(form.sniperRenameBurstCount.value),
+    renameRetryIntervalMs: Number(form.sniperRenameRetryIntervalMs.value),
+    renameTxTimeoutMs: Number(form.sniperRenameTxTimeoutMs.value),
+
     defaultHotkey: form.sniperDefaultHotkey.value.trim(),
     wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {
       acc[row.dataset.address] = {

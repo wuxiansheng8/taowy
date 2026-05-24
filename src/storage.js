@@ -47,6 +47,11 @@ export const defaultConfig = {
     burstCount: 1,
     retryIntervalMs: 200,
     txTimeoutMs: 5000,
+    renameAmountTao: 1.0,
+    renameMaxRetries: 5,
+    renameBurstCount: 1,
+    renameRetryIntervalMs: 200,
+    renameTxTimeoutMs: 5000,
     defaultHotkey: DEFAULT_SNIPER_HOTKEY,
     hotkeys: {}, // 格式: { "116": "hotkey 地址" }
     wallets: {} // 格式: { "address": { name: "备注", enabled: true } }

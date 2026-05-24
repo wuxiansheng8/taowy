@@ -247,6 +247,13 @@ function sanitizeSettings(current, body) {
     next.sniper.burstCount = Math.floor(clamp(body.sniper.burstCount, 1, 50, current.sniper.burstCount || 1));
     next.sniper.retryIntervalMs = clamp(body.sniper.retryIntervalMs, 0, 60000, current.sniper.retryIntervalMs);
     next.sniper.txTimeoutMs = clamp(body.sniper.txTimeoutMs, 1000, 30000, current.sniper.txTimeoutMs || 5000);
+
+    next.sniper.renameAmountTao = clamp(body.sniper.renameAmountTao, 0.001, 10000, current.sniper.renameAmountTao || 1.0);
+    next.sniper.renameMaxRetries = clamp(body.sniper.renameMaxRetries, 0, 1000, current.sniper.renameMaxRetries !== undefined ? current.sniper.renameMaxRetries : 5);
+    next.sniper.renameBurstCount = Math.floor(clamp(body.sniper.renameBurstCount, 1, 50, current.sniper.renameBurstCount || 1));
+    next.sniper.renameRetryIntervalMs = clamp(body.sniper.renameRetryIntervalMs, 0, 60000, current.sniper.renameRetryIntervalMs !== undefined ? current.sniper.renameRetryIntervalMs : 200);
+    next.sniper.renameTxTimeoutMs = clamp(body.sniper.renameTxTimeoutMs, 1000, 30000, current.sniper.renameTxTimeoutMs || 5000);
+
     next.sniper.defaultHotkey = sanitizeHotkey(
       body.sniper.defaultHotkey !== undefined ? body.sniper.defaultHotkey : current.sniper.defaultHotkey
     );

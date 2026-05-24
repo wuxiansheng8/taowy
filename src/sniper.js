@@ -221,11 +221,24 @@ class Sniper {
 
     const activePairs = [];
     const walletSettings = settings.wallets || {};
-    const amountTao = settings.amountTao || 1.0;
-    const maxRetries = settings.maxRetries === undefined || settings.maxRetries === null ? 5 : Number(settings.maxRetries);
-    const burstCount = Math.max(1, Math.floor(Number(settings.burstCount || 1)));
-    const retryInterval = settings.retryIntervalMs ?? 200;
-    const txTimeoutMs = settings.txTimeoutMs || 5000;
+    const isRename = enabledKey === 'renameEnabled';
+    const amountTao = isRename
+      ? (settings.renameAmountTao ?? settings.amountTao ?? 1.0)
+      : (settings.amountTao ?? 1.0);
+    const rawMaxRetries = isRename
+      ? (settings.renameMaxRetries ?? settings.maxRetries ?? 5)
+      : (settings.maxRetries ?? 5);
+    const maxRetries = Number(rawMaxRetries);
+    const burstCount = Math.max(1, Math.floor(Number(isRename
+      ? (settings.renameBurstCount ?? settings.burstCount ?? 1)
+      : (settings.burstCount ?? 1)
+    )));
+    const retryInterval = isRename
+      ? (settings.renameRetryIntervalMs ?? settings.retryIntervalMs ?? 200)
+      : (settings.retryIntervalMs ?? 200);
+    const txTimeoutMs = isRename
+      ? (settings.renameTxTimeoutMs ?? settings.txTimeoutMs ?? 5000)
+      : (settings.txTimeoutMs ?? 5000);
 
     for (const [address, data] of this.walletMap.entries()) {
       const setting = walletSettings[address] || {};
