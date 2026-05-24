@@ -4,7 +4,7 @@ import { blocksToDuration } from './time.js';
 import { loadState, saveState } from './storage.js';
 import { getSniper } from './sniper.js';
 
-const STATE_VERSION = 4;
+const STATE_VERSION = 5;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
 const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd';
 const TAO_USD_CACHE_MS = 5 * 60 * 1000;
@@ -38,7 +38,7 @@ const ZERO_STATE = {
     unstakeTaoToday: 0,
     stakeEventsToday: 0,
     unstakeEventsToday: 0,
-    bjDate: beijingDateKey(Date.now()),
+    utcDate: utcDateKey(Date.now()),
     recent: []
   },
   launches: [],
@@ -304,7 +304,7 @@ export class BittensorMonitor {
         if (flow) {
           this.state.chainFlow.recent.push({
             ts: Date.now(),
-            bjDate: beijingDateKey(Date.now()),
+            utcDate: utcDateKey(Date.now()),
             blockNumber,
             event: text,
             eventLabel: flow.flowType === 'stake' ? '买入/质押' : '卖出/解质押',
@@ -367,14 +367,14 @@ export class BittensorMonitor {
   }
 
   prunedChainFlowFrom(chainFlow) {
-    const today = beijingDateKey(Date.now());
+    const today = utcDateKey(Date.now());
     const cutoff = Date.now() - 48 * 60 * 60 * 1000;
     const recent = (chainFlow?.recent || [])
       .filter((item) => item.ts >= cutoff)
       .map(normalizeFlowItem)
       .filter(Boolean)
       .slice(-500);
-    const todayItems = recent.filter((item) => item.bjDate === today);
+    const todayItems = recent.filter((item) => item.utcDate === today);
     const stakeItems = todayItems.filter((item) => item.flowType === 'stake');
     const unstakeItems = todayItems.filter((item) => item.flowType === 'unstake');
     const stakeKnown = stakeItems.filter((item) => Number.isFinite(item.amountTao)).length;
@@ -387,7 +387,7 @@ export class BittensorMonitor {
       stakeAmountEventsToday: stakeKnown,
       unstakeAmountEventsToday: unstakeKnown,
       amountReliable: stakeKnown === stakeItems.length && unstakeKnown === unstakeItems.length,
-      bjDate: today,
+      utcDate: today,
       recent
     };
   }
@@ -643,9 +643,9 @@ function sumAmounts(items) {
   return items.reduce((total, item) => total + (Number.isFinite(item.amountTao) ? item.amountTao : 0), 0);
 }
 
-function beijingDateKey(ts) {
+function utcDateKey(ts) {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai',
+    timeZone: 'UTC',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
