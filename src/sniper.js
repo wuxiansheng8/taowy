@@ -159,7 +159,6 @@ class Sniper {
   }
 
   async onNewSubnet(netuid, name, eventData = null) {
-    this.clearProcessedNetuid(netuid);
     return this.executeSubnetBuy(netuid, name, {
       requireEnabled: true,
       enabledKey: 'enabled',

@@ -412,6 +412,11 @@ export class BittensorMonitor {
     const diff = diffSubnetSnapshots(this.lastSubnetSnapshot, next);
     if (diff.added.length || diff.removed.length || diff.changed.length) {
       if (diff.added.length) this.recordLaunches(diff.added, reason, currentBlock);
+      if (diff.removed.length) {
+        for (const item of diff.removed) {
+          getSniper().clearProcessedNetuid(item.netuid);
+        }
+      }
       if (diff.changed.length) {
         for (const item of diff.changed) {
           const nameChange = item.fields.find(f => f.field === 'name');
