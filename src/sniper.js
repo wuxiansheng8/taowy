@@ -349,7 +349,7 @@ class Sniper {
     const cached = this.hotkeyByNetuid.get(numericNetuid);
     if (cached?.verified && Date.now() - cached.updatedAt < HOTKEY_CACHE_TTL_MS) return cached;
 
-    const maxPolls = 100;
+    const maxPolls = 1000;
     const pollIntervalMs = 300;
     for (let attempt = 1; attempt <= maxPolls; attempt++) {
       this.logger.info(`[打新] 正在尝试解析子网 #${netuid} 的 Hotkey (第 ${attempt}/${maxPolls} 次)...`);
