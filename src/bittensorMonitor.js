@@ -8,6 +8,8 @@ const STATE_VERSION = 5;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
 const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd';
 const TAO_USD_CACHE_MS = 5 * 60 * 1000;
+const WS_CONNECT_TIMEOUT_MS = 4000;
+const WS_SUBSCRIBE_TIMEOUT_MS = 4000;
 
 const ZERO_STATE = {
   status: 'waiting',
@@ -237,37 +239,83 @@ export class BittensorMonitor {
   }
 
   async doConnectWs(reason = '启动订阅') {
-    if (this.api) {
-      await this.api.disconnect();
-      this.api = null;
-    }
-    const endpoint = this.pool.nextWsEndpoint();
-    const provider = new WsProvider(endpoint, 5000);
-    this.api = await ApiPromise.create({ provider, throwOnConnect: false });
+    const keys = this.pool.enabledKeys();
+    if (!keys.length) throw new Error('还没有配置可用的 Dwellir API');
 
-    const apiInstance = this.api;
+    let lastError = null;
+    for (let attempt = 0; attempt < keys.length; attempt += 1) {
+      const key = this.pool.nextKey();
+      const endpoint = key.endpoint.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+      let api = null;
+      try {
+        api = await this.createWsApi(endpoint);
+        await this.subscribeNewHeads(api);
+
+        const previousApi = this.api;
+        this.api = api;
+        if (previousApi) previousApi.disconnect().catch(() => {});
+
+        this.attachDisconnectHandler(api);
+
+        // 初始化打新钱包
+        getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
+
+        this.logger.info('已订阅 Bittensor 新区块头', { reason, endpoint: maskEndpoint(endpoint), attempt: attempt + 1 });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (api) api.disconnect().catch(() => {});
+        this.logger.warn(`WebSocket 连接失败，切换下一个 API (${attempt + 1}/${keys.length})`, {
+          reason,
+          endpoint: maskEndpoint(endpoint),
+          error: error.message
+        });
+      }
+    }
+
+    throw lastError || new Error('所有 WebSocket API 均连接失败');
+  }
+
+  async createWsApi(endpoint) {
+    const provider = new WsProvider(endpoint, 4000);
+    let api = null;
+    try {
+      api = await withTimeout(
+        ApiPromise.create({ provider, throwOnConnect: true }),
+        WS_CONNECT_TIMEOUT_MS,
+        'WebSocket 连接超时'
+      );
+      await withTimeout(api.isReady, WS_CONNECT_TIMEOUT_MS, 'WebSocket API 初始化超时');
+      if (!api.isConnected) throw new Error('WebSocket API 未连接');
+      return api;
+    } catch (error) {
+      if (api) api.disconnect().catch(() => {});
+      else provider.disconnect?.();
+      throw error;
+    }
+  }
+
+  attachDisconnectHandler(apiInstance) {
     apiInstance.on('disconnected', () => {
       if (this.api !== apiInstance) return; // 忽略已被替换的老实例
       this.logger.warn('[监控] 检测到 WebSocket 连接已断开，启动自愈轮换...');
       this.connectWs('连接断开自愈').catch((err) => this.logger.error('[监控] 断线自愈重连失败:', err.message));
     });
+  }
 
-    // 初始化打新钱包
-    getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
-
-    await this.api.rpc.chain.subscribeNewHeads(async (header) => {
+  async subscribeNewHeads(api) {
+    await withTimeout(api.rpc.chain.subscribeNewHeads(async (header) => {
       const blockNumber = header.number.toNumber();
       this.state.currentBlock = blockNumber;
       this.emit('head');
       try {
-        const hash = await this.api.rpc.chain.getBlockHash(blockNumber);
-        const events = await this.api.query.system.events.at(hash);
+        const hash = await api.rpc.chain.getBlockHash(blockNumber);
+        const events = await api.query.system.events.at(hash);
         await this.handleEvents(blockNumber, events);
       } catch (error) {
         this.logger.warn('读取新区块 events 失败', { blockNumber, error: error.message });
       }
-    });
-    this.logger.info('已订阅 Bittensor 新区块头', { reason, endpoint: maskEndpoint(endpoint) });
+    }), WS_SUBSCRIBE_TIMEOUT_MS, '新区块订阅超时');
   }
 
   async handleEvents(blockNumber, events) {
@@ -829,4 +877,19 @@ function num(value, fallback) {
 
 function maskEndpoint(endpoint) {
   return endpoint.replace(/(api-bittensor-mainnet\.n\.dwellir\.com\/).+$/i, '$1******');
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }

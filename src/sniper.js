@@ -207,6 +207,7 @@ class Sniper {
         this.logger.warn(`[打新] 检测到 WebSocket 未连接，正在尝试紧急重连并切换节点...`);
         try {
           await this.monitor.connectWs('打新紧急重连');
+          if (this.monitor.api) this.api = this.monitor.api;
         } catch (err) {
           this.logger.error('[打新] 紧急重连失败:', err.message);
         }
@@ -293,6 +294,7 @@ class Sniper {
             this.logger.warn(`[打新] 钱包【${walletName}】尝试期间发现连接断开，触发紧急重连...`);
             try {
               await this.monitor.connectWs('交易紧急重连');
+              if (this.monitor.api) this.api = this.monitor.api;
             } catch (err) {
               this.logger.error('[打新] 交易重连失败:', err.message);
             }
