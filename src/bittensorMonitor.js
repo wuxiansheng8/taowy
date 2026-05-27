@@ -10,6 +10,7 @@ const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bit
 const TAO_USD_CACHE_MS = 5 * 60 * 1000;
 const WS_CONNECT_TIMEOUT_MS = 4000;
 const WS_SUBSCRIBE_TIMEOUT_MS = 4000;
+const WS_URGENT_RECONNECT_ROUNDS = 2;
 
 const ZERO_STATE = {
   status: 'waiting',
@@ -243,9 +244,13 @@ export class BittensorMonitor {
     if (!keys.length) throw new Error('还没有配置可用的 Dwellir API');
 
     let lastError = null;
-    for (let attempt = 0; attempt < keys.length; attempt += 1) {
+    const rounds = isUrgentWsReason(reason) ? WS_URGENT_RECONNECT_ROUNDS : 1;
+    const totalAttempts = keys.length * rounds;
+    for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
       const key = this.pool.nextKey();
       const endpoint = key.endpoint.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+      const round = Math.floor(attempt / keys.length) + 1;
+      const keyAttempt = (attempt % keys.length) + 1;
       let api = null;
       try {
         api = await this.createWsApi(endpoint);
@@ -260,20 +265,22 @@ export class BittensorMonitor {
         // 初始化打新钱包
         getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
 
-        this.logger.info('已订阅 Bittensor 新区块头', { reason, endpoint: maskEndpoint(endpoint), attempt: attempt + 1 });
+        this.logger.info('已订阅 Bittensor 新区块头', { reason, endpoint: maskEndpoint(endpoint), attempt: attempt + 1, round });
         return;
       } catch (error) {
         lastError = error;
         if (api) api.disconnect().catch(() => {});
-        this.logger.warn(`WebSocket 连接失败，切换下一个 API (${attempt + 1}/${keys.length})`, {
+        this.logger.warn(`WebSocket 连接失败，切换下一个 API (${attempt + 1}/${totalAttempts})`, {
           reason,
           endpoint: maskEndpoint(endpoint),
+          round,
+          keyAttempt,
           error: error.message
         });
       }
     }
 
-    throw lastError || new Error('所有 WebSocket API 均连接失败');
+    throw lastError || new Error(`所有 WebSocket API 均连接失败，已尝试 ${rounds} 轮`);
   }
 
   async createWsApi(endpoint) {
@@ -877,6 +884,10 @@ function num(value, fallback) {
 
 function maskEndpoint(endpoint) {
   return endpoint.replace(/(api-bittensor-mainnet\.n\.dwellir\.com\/).+$/i, '$1******');
+}
+
+function isUrgentWsReason(reason) {
+  return /打新|交易|紧急/.test(String(reason || ''));
 }
 
 function withTimeout(promise, timeoutMs, message) {

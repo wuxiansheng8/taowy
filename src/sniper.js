@@ -217,10 +217,16 @@ class Sniper {
           if (this.monitor.api) this.api = this.monitor.api;
         } catch (err) {
           this.logger.error('[打新] 紧急重连失败:', err.message);
+          return { ok: false, skipped: true, reason: `WebSocket 重连失败: ${err.message}` };
         }
       }
     }
     if (!this.api) throw new Error('链 API 尚未连接，无法发起购买');
+    if (!this.api.isConnected) {
+      const reason = 'WebSocket 重连后仍未连接，停止本次打新';
+      this.logger.error(`[打新] ${reason}`);
+      return { ok: false, skipped: true, reason };
+    }
     const target = await this.resolveHotkey(netuid, options.eventData);
     if (!target?.hotkey) {
       const reason = `子网 #${netuid} 未找到可用 hotkey`;
@@ -297,9 +303,11 @@ class Sniper {
               if (this.monitor.api) this.api = this.monitor.api;
             } catch (err) {
               this.logger.error('[打新] 交易重连失败:', err.message);
+              throw new Error(`WebSocket 交易重连失败: ${err.message}`);
             }
           }
         }
+        if (!this.api?.isConnected) throw new Error('WebSocket 重连后仍未连接，停止本次交易尝试');
         this.logger.info(`[打新] 钱包【${walletName}】并发 ${burstIndex} 尝试购买 #${netuid} (第 ${attempts} 次)...`);
 
         const tx = this.api.tx.subtensorModule.addStake(targetHotkey, netuid, amountBigInt);
