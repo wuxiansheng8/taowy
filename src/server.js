@@ -3,10 +3,11 @@ import express from 'express';
 import session from 'express-session';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import WebSocket from 'ws';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppLogger } from './logger.js';
-import { DwellirPool, extractDwellirApiKey, normalizeEndpoint } from './dwellirPool.js';
+import { DwellirPool, extractDwellirApiKey, normalizeEndpoint, toWsEndpoint } from './dwellirPool.js';
 import { BittensorMonitor } from './bittensorMonitor.js';
 import { Notifier } from './notifier.js';
 import { checkPassword, publicConfig, requireAuth } from './auth.js';
@@ -146,6 +147,18 @@ app.post('/api/telegram/test', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/dwellir/test', requireAuth, async (req, res) => {
+  const keys = sanitizeApiKeysForTest(req.body?.keys, config.apiPool.keys || []);
+  const timeoutMs = clamp(req.body?.timeoutMs, 1000, 30000, 8000);
+  const results = await Promise.all(keys.map((key) => testDwellirKey(key, timeoutMs)));
+  logger.info('Dwellir API 连通性检测完成', {
+    username: req.session.user.username,
+    total: results.length,
+    ok: results.filter((item) => item.http.ok && item.ws.ok).length
+  });
+  res.json({ ok: true, results });
+});
+
 app.post('/api/sniper/balances', requireAuth, async (req, res) => {
   const walletList = await getSniper().refreshAllBalances();
   res.json({ ok: true, walletList });
@@ -275,6 +288,126 @@ function sanitizeSettings(current, body) {
     }
   }
   return next;
+}
+
+function sanitizeApiKeysForTest(inputKeys, currentKeys) {
+  return (inputKeys || []).map((key, index) => {
+    const prior = currentKeys?.find((old) => old.id === key.id) || {};
+    const incoming = key.endpoint && !String(key.endpoint).includes('******')
+      ? key.endpoint
+      : (key.apiKey && !String(key.apiKey).includes('******') ? key.apiKey : '');
+    const apiKey = extractDwellirApiKey(incoming) || prior.apiKey || extractDwellirApiKey(prior.endpoint);
+    const endpoint = apiKey ? normalizeEndpoint({ apiKey }) : normalizeEndpoint({ endpoint: prior.endpoint || incoming });
+    return {
+      id: key.id || prior.id || `api-${index}`,
+      name: key.name || prior.name || `API ${index + 1}`,
+      enabled: key.enabled !== false,
+      endpoint
+    };
+  }).filter((key) => key.endpoint);
+}
+
+async function testDwellirKey(key, timeoutMs) {
+  const startedAt = Date.now();
+  const [http, ws] = await Promise.all([
+    testHttpRpc(key.endpoint, timeoutMs),
+    testWsRpc(toWsEndpoint(key.endpoint), timeoutMs)
+  ]);
+  return {
+    id: key.id,
+    name: key.name,
+    endpoint: maskEndpoint(key.endpoint),
+    wsEndpoint: maskEndpoint(toWsEndpoint(key.endpoint)),
+    enabled: key.enabled,
+    elapsedMs: Date.now() - startedAt,
+    http,
+    ws
+  };
+}
+
+async function testHttpRpc(endpoint, timeoutMs) {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'system_health', params: [] })
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = JSON.parse(text);
+    if (payload.error) throw new Error(payload.error.message || JSON.stringify(payload.error));
+    return {
+      ok: true,
+      latencyMs: Date.now() - startedAt,
+      detail: healthSummary(payload.result)
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      error: error.name === 'AbortError' ? '请求超时' : error.message
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function testWsRpc(endpoint, timeoutMs) {
+  const startedAt = Date.now();
+  return new Promise((resolve) => {
+    let settled = false;
+    let ws;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws?.close(); } catch {}
+      resolve({
+        latencyMs: Date.now() - startedAt,
+        ...result
+      });
+    };
+    const timer = setTimeout(() => finish({ ok: false, error: '连接或响应超时' }), timeoutMs);
+    try {
+      ws = new WebSocket(endpoint);
+      ws.on('open', () => {
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'system_health', params: [] }));
+      });
+      ws.on('message', (data) => {
+        try {
+          const payload = JSON.parse(data.toString());
+          if (payload.error) throw new Error(payload.error.message || JSON.stringify(payload.error));
+          finish({ ok: true, detail: healthSummary(payload.result) });
+        } catch (error) {
+          finish({ ok: false, error: error.message });
+        }
+      });
+      ws.on('error', (error) => finish({ ok: false, error: error.message }));
+      ws.on('close', (code, reason) => {
+        finish({ ok: false, error: `连接关闭 ${code}${reason ? `: ${reason}` : ''}` });
+      });
+    } catch (error) {
+      finish({ ok: false, error: error.message });
+    }
+  });
+}
+
+function healthSummary(result) {
+  if (!result || typeof result !== 'object') return '';
+  const peers = result.peers ?? result.numPeers;
+  const syncing = result.isSyncing ?? result.shouldHavePeers;
+  const parts = [];
+  if (peers !== undefined) parts.push(`peers ${peers}`);
+  if (syncing !== undefined) parts.push(`syncing ${syncing}`);
+  return parts.join(', ');
+}
+
+function maskEndpoint(value) {
+  return String(value || '').replace(/(api-bittensor-mainnet\.n\.dwellir\.com\/).+$/i, '$1******');
 }
 
 function sanitizeHotkeys(input, maxSubnets = 128) {

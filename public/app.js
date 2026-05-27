@@ -285,6 +285,8 @@ function apiRow(key, i) {
     <label>名称<input data-field="name" value="${escapeAttr(key.name || `API ${i + 1}`)}"></label>
     <label>Endpoint 或 API Key<input data-field="endpoint" value="${escapeAttr(key.endpoint || key.apiKey || '')}" placeholder="https://.../key 或 key"></label>
     <label>单 key RPS<input data-field="perSecondLimit" type="number" min="1" value="${key.perSecondLimit || 20}"></label>
+    <div class="api-test-status" data-test-status>未检测</div>
+    <button type="button" class="ghost" data-test-api>检测</button>
     <button type="button" data-remove>删除</button>
   </div>`;
 }
@@ -295,6 +297,11 @@ $('#addApiBtn').addEventListener('click', () => {
 
 $('#apiList').addEventListener('click', (event) => {
   if (event.target.matches('[data-remove]')) event.target.closest('.api-row').remove();
+  if (event.target.matches('[data-test-api]')) testApiRows([event.target.closest('.api-row')]);
+});
+
+$('#testAllApiBtn')?.addEventListener('click', async () => {
+  await testApiRows([...$('#apiList').querySelectorAll('.api-row')]);
 });
 
 $('#testTelegramBtn').addEventListener('click', async () => {
@@ -324,18 +331,7 @@ $('#testTelegramBtn').addEventListener('click', async () => {
 $('#settingsForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  const keys = [...$('#apiList').querySelectorAll('.api-row')].map((row) => {
-    const input = row.querySelector('[data-field="endpoint"]').value.trim();
-    const apiKey = normalizeDwellirInput(input);
-    return {
-      id: row.dataset.id,
-      enabled: row.querySelector('[data-field="enabled"]').checked,
-      name: row.querySelector('[data-field="name"]').value.trim(),
-      endpoint: apiKey ? `https://api-bittensor-mainnet.n.dwellir.com/${apiKey}` : input,
-      apiKey,
-      perSecondLimit: Number(row.querySelector('[data-field="perSecondLimit"]').value)
-    };
-  });
+  const keys = collectApiRows();
   const payload = {
     apiPool: {
       globalRps: Number(form.globalRps.value),
@@ -365,6 +361,69 @@ $('#settingsForm').addEventListener('submit', async (event) => {
   $('#settingsMsg').textContent = '已保存';
   await loadSettings();
 });
+
+function collectApiRows(rows = [...$('#apiList').querySelectorAll('.api-row')]) {
+  return rows.map((row, index) => {
+    const input = row.querySelector('[data-field="endpoint"]').value.trim();
+    const apiKey = normalizeDwellirInput(input);
+    return {
+      id: row.dataset.id || `new-${index}`,
+      enabled: row.querySelector('[data-field="enabled"]').checked,
+      name: row.querySelector('[data-field="name"]').value.trim(),
+      endpoint: apiKey ? `https://api-bittensor-mainnet.n.dwellir.com/${apiKey}` : input,
+      apiKey,
+      perSecondLimit: Number(row.querySelector('[data-field="perSecondLimit"]').value)
+    };
+  });
+}
+
+async function testApiRows(rows) {
+  if (!rows.length) return;
+  for (const row of rows) setApiTestStatus(row, 'checking', '检测中...');
+  const buttons = rows.flatMap((row) => [...row.querySelectorAll('[data-test-api]')]);
+  const allBtn = $('#testAllApiBtn');
+  buttons.forEach((btn) => { btn.disabled = true; });
+  if (allBtn) allBtn.disabled = true;
+  try {
+    const result = await api('/api/dwellir/test', {
+      method: 'POST',
+      body: JSON.stringify({ keys: collectApiRows(rows) })
+    });
+    const byId = new Map((result.results || []).map((item) => [item.id, item]));
+    rows.forEach((row, index) => {
+      const item = byId.get(row.dataset.id || `new-${index}`) || (result.results || [])[index];
+      renderApiTestResult(row, item);
+    });
+  } catch (error) {
+    rows.forEach((row) => setApiTestStatus(row, 'bad', error.message));
+  } finally {
+    buttons.forEach((btn) => { btn.disabled = false; });
+    if (allBtn) allBtn.disabled = false;
+  }
+}
+
+function renderApiTestResult(row, result) {
+  if (!result) {
+    setApiTestStatus(row, 'bad', '没有检测结果');
+    return;
+  }
+  const http = result.http || {};
+  const ws = result.ws || {};
+  const ok = http.ok && ws.ok;
+  const text = [
+    `HTTP ${http.ok ? '正常' : '失败'}${Number.isFinite(http.latencyMs) ? ` ${http.latencyMs}ms` : ''}${http.error ? `: ${http.error}` : ''}`,
+    `WS ${ws.ok ? '正常' : '失败'}${Number.isFinite(ws.latencyMs) ? ` ${ws.latencyMs}ms` : ''}${ws.error ? `: ${ws.error}` : ''}`
+  ].join(' / ');
+  setApiTestStatus(row, ok ? 'ok' : 'bad', text);
+}
+
+function setApiTestStatus(row, stateName, text) {
+  const el = row?.querySelector('[data-test-status]');
+  if (!el) return;
+  el.className = `api-test-status ${stateName}`;
+  el.textContent = text;
+  el.title = text;
+}
 
 $('#sniperForm').addEventListener('submit', async (event) => {
   event.preventDefault();

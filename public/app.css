@@ -593,6 +593,12 @@ tr:hover td {
   margin-top: 14px;
 }
 
+.section-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .api-list {
   display: grid;
   gap: 12px;
@@ -600,7 +606,7 @@ tr:hover td {
 
 .api-row {
   display: grid;
-  grid-template-columns: 80px 1.5fr 2fr 110px 80px;
+  grid-template-columns: 80px 1.35fr minmax(240px, 2fr) 110px minmax(220px, 1.3fr) 82px 80px;
   gap: 12px;
   align-items: end;
   background: rgba(13, 17, 29, 0.4);
@@ -624,9 +630,53 @@ tr:hover td {
   box-shadow: none;
 }
 
-.api-row button:hover {
+.api-row button[data-test-api] {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--ink);
+}
+
+.api-row button[data-test-api]:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.api-row button[data-remove]:hover {
   background: var(--red);
   box-shadow: 0 4px 12px rgba(255, 23, 68, 0.2);
+}
+
+.api-test-status {
+  min-height: 42px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(13, 17, 29, 0.8);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.api-test-status.ok {
+  color: var(--green);
+  border-color: rgba(0, 230, 118, 0.35);
+  background: var(--green-soft);
+}
+
+.api-test-status.bad {
+  color: #ff7b96;
+  border-color: rgba(255, 23, 68, 0.45);
+  background: var(--red-soft);
+}
+
+.api-test-status.checking {
+  color: var(--amber);
+  border-color: rgba(255, 214, 0, 0.35);
+  background: var(--amber-soft);
 }
 
 .sniper-wallet-row {
