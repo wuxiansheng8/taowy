@@ -202,6 +202,13 @@ class Sniper {
   }
 
   async executeSubnetBuy(netuid, name, options = {}) {
+    const config = this.getConfig();
+    const settings = config.sniper;
+    const enabledKey = options.enabledKey || 'enabled';
+    if (options.requireEnabled && !settings?.[enabledKey]) {
+      return { ok: false, skipped: true, reason: `${options.label || '自动打新'}未启用` };
+    }
+
     if (!this.api || !this.api.isConnected) {
       if (this.monitor) {
         this.logger.warn(`[打新] 检测到 WebSocket 未连接，正在尝试紧急重连并切换节点...`);
@@ -221,13 +228,6 @@ class Sniper {
       return { ok: false, skipped: true, reason };
     }
     const targetHotkey = target.hotkey;
-    const config = this.getConfig();
-    const settings = config.sniper;
-
-    const enabledKey = options.enabledKey || 'enabled';
-    if (options.requireEnabled && !settings?.[enabledKey]) {
-      return { ok: false, skipped: true, reason: `${options.label || '自动打新'}未启用` };
-    }
     if (options.dedupe) {
       const processedAt = this.processedNetuids.get(netuid);
       if (processedAt && (Date.now() - processedAt < 24 * 60 * 60 * 1000)) {
@@ -323,6 +323,7 @@ class Sniper {
           break;
         }
         if (isLast) break;
+        await this.refreshNonce(pair.address).catch(() => {});
         await new Promise(resolve => setTimeout(resolve, retryInterval));
       }
     }
@@ -439,12 +440,7 @@ class Sniper {
       const scoped = await storage.entries(netuid);
       if (scoped?.length) return scoped;
     } catch {}
-    try {
-      const allEntries = await storage.entries();
-      return this.filterEntriesByNetuid(allEntries, netuid);
-    } catch {
-      return [];
-    }
+    return [];
   }
 
   filterEntriesByNetuid(entries, netuid) {
