@@ -4,7 +4,7 @@ import { blocksToDuration } from './time.js';
 import { loadState, saveState } from './storage.js';
 import { getSniper } from './sniper.js';
 
-const STATE_VERSION = 5;
+const STATE_VERSION = 6;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
 const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd';
 const TAO_USD_CACHE_MS = 5 * 60 * 1000;
@@ -166,23 +166,23 @@ export class BittensorMonitor {
       }
     }
 
-    // 针对目前处于免疫期、但还不知道当时注册成本的子网进行历史查询
-    const subnetsToFetch = subnets.filter(s => s.inImmunity && s.registrationBlock != null && s.registrationCostPaid === null);
+    // 针对目前处于免疫期、但还不知道当时注册成本的子网进行历史查询 (查询注册区块的前一个区块的值，以获得注册前的实际成本)
+    const subnetsToFetch = subnets.filter(s => s.inImmunity && s.registrationBlock != null && s.registrationBlock > 0 && s.registrationCostPaid === null);
     if (subnetsToFetch.length > 0) {
       this.logger.info(`开始获取 ${subnetsToFetch.length} 个免疫期子网的注册历史成本...`);
       await Promise.all(subnetsToFetch.map(async (s) => {
         try {
-          const blockHash = await this.pool.rpc('chain_getBlockHash', [s.registrationBlock]);
+          const blockHash = await this.pool.rpc('chain_getBlockHash', [s.registrationBlock - 1]);
           if (blockHash) {
             const rawCost = await this.pool.rpc('subnetInfo_getLockCost', [blockHash]);
             const cost = Number(rawCost) / 1e9;
             if (Number.isFinite(cost)) {
               s.registrationCostPaid = cost;
-              this.logger.info(`获取子网 SN${s.netuid} 注册成本成功: ${cost} TAO (区块 ${s.registrationBlock})`);
+              this.logger.info(`获取子网 SN${s.netuid} 注册成本成功: ${cost} TAO (注册于区块 ${s.registrationBlock})`);
             }
           }
         } catch (err) {
-          this.logger.warn(`获取子网 SN${s.netuid} 在区块 ${s.registrationBlock} 的注册成本失败`, { error: err.message });
+          this.logger.warn(`获取子网 SN${s.netuid} 在区块 ${s.registrationBlock - 1} 的注册成本失败`, { error: err.message });
         }
       }));
     }
@@ -424,9 +424,16 @@ export class BittensorMonitor {
   restoreState() {
     const saved = loadState();
     if (!saved?.state) return;
+    const subnets = saved.state.subnets || [];
+    if (saved.version < 6) {
+      for (const s of subnets) {
+        s.registrationCostPaid = null;
+      }
+    }
     this.state = {
       ...structuredClone(ZERO_STATE),
       ...saved.state,
+      subnets,
       chainFlow: saved.version === STATE_VERSION ? this.prunedChainFlowFrom(saved.state.chainFlow) : structuredClone(ZERO_STATE.chainFlow),
       errors: []
     };
