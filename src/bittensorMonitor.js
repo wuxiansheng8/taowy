@@ -118,7 +118,7 @@ export class BittensorMonitor {
   async doRefresh(reason = '手动刷新') {
     try {
       const data = await this.collect();
-      this.applyCollected(data, reason);
+      await this.applyCollected(data, reason);
       this.logger.info(`${reason}完成`, {
         block: this.state.currentBlock,
         subnetCount: this.state.race.currentSubnetCount
@@ -147,13 +147,46 @@ export class BittensorMonitor {
     return data;
   }
 
-  applyCollected(data, reason = '采集') {
+  async applyCollected(data, reason = '采集') {
     if (!Array.isArray(data.subnets) || !data.subnets.length) {
       throw new Error('采集结果为空，保留上次快照');
     }
     const cfg = this.getConfig().collector;
     const taoUsdPrice = nullableNumber(data.taoUsdPrice ?? this.state.taoUsdPrice);
     const subnets = normalizeSubnets(this.decorateMetrics(data.subnets || []), data.registrationCost, data.immunityPeriod, data.currentBlock, cfg, taoUsdPrice);
+
+    // 从上一次的状态缓存中复用 registrationCostPaid (如果注册区块号没有发生改变)
+    const prevSubnetsMap = new Map((this.state.subnets || []).map(s => [s.netuid, s]));
+    for (const s of subnets) {
+      const prev = prevSubnetsMap.get(s.netuid);
+      if (prev && prev.registrationBlock === s.registrationBlock && prev.registrationCostPaid != null) {
+        s.registrationCostPaid = prev.registrationCostPaid;
+      } else {
+        s.registrationCostPaid = null;
+      }
+    }
+
+    // 针对目前处于免疫期、但还不知道当时注册成本的子网进行历史查询
+    const subnetsToFetch = subnets.filter(s => s.inImmunity && s.registrationBlock != null && s.registrationCostPaid === null);
+    if (subnetsToFetch.length > 0) {
+      this.logger.info(`开始获取 ${subnetsToFetch.length} 个免疫期子网的注册历史成本...`);
+      await Promise.all(subnetsToFetch.map(async (s) => {
+        try {
+          const blockHash = await this.pool.rpc('chain_getBlockHash', [s.registrationBlock]);
+          if (blockHash) {
+            const rawCost = await this.pool.rpc('subnetInfo_getLockCost', [blockHash]);
+            const cost = Number(rawCost) / 1e9;
+            if (Number.isFinite(cost)) {
+              s.registrationCostPaid = cost;
+              this.logger.info(`获取子网 SN${s.netuid} 注册成本成功: ${cost} TAO (区块 ${s.registrationBlock})`);
+            }
+          }
+        } catch (err) {
+          this.logger.warn(`获取子网 SN${s.netuid} 在区块 ${s.registrationBlock} 的注册成本失败`, { error: err.message });
+        }
+      }));
+    }
+
     const ranked = [...subnets].filter((s) => s.raceEligible).sort((a, b) => num(a.emaPrice, Infinity) - num(b.emaPrice, Infinity));
     const nextPrune = data.nextPruneCandidate ?? ranked[0]?.netuid ?? null;
     const bottom10Netuids = new Set(ranked.slice(0, 10).map(s => s.netuid));
@@ -194,7 +227,8 @@ export class BittensorMonitor {
           registrationBlock: s.registrationBlock,
           immunityEndsAtBlock: s.immunityEndsAtBlock,
           remainingBlocks: s.remainingImmunityBlocks,
-          remainingText: blocksToDuration(s.remainingImmunityBlocks || 0, cfg.blockTimeMs)
+          remainingText: blocksToDuration(s.remainingImmunityBlocks || 0, cfg.blockTimeMs),
+          registrationCostPaid: s.registrationCostPaid ?? null
         }))
       },
       chainFlow: this.prunedChainFlow(),
@@ -598,6 +632,7 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
       alphaStaked,
       taoIn,
       registrationCost: nullableNumber(item.registrationCost ?? item.registration_cost ?? registrationCost),
+      registrationCostPaid: nullableNumber(item.registrationCostPaid),
       emaPrice: nullableNumber(item.emaPrice ?? item.ema_price ?? item.moving_price),
       volume1h: nullableNumber(item.volume1h ?? item.volume_1h),
       volume24h: nullableNumber(item.volume24h ?? item.volume_24h),

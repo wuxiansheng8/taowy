@@ -185,8 +185,8 @@ function renderRace(race) {
     `<tr><td>${r.rank}</td><td>#${r.netuid} ${escapeHtml(r.name)}</td><td>${fmt(r.emaPrice)}</td></tr>`
   ).join('') || '<tr><td colspan="3">暂无数据</td></tr>';
   $('#immuneRows').innerHTML = (race.immuneSubnets || []).map((s) =>
-    `<tr><td>#${s.netuid} ${escapeHtml(s.name)}</td><td>${s.registrationBlock ?? '--'}</td><td>${s.immunityEndsAtBlock ?? '--'}</td><td>${s.remainingText}</td></tr>`
-  ).join('') || '<tr><td colspan="4">暂无免疫期 subnet</td></tr>';
+    `<tr><td>#${s.netuid} ${escapeHtml(s.name)}</td><td>${s.registrationBlock ?? '--'}</td><td>${s.immunityEndsAtBlock ?? '--'}</td><td>${s.registrationCostPaid != null ? fmtFixed(s.registrationCostPaid, 2, ' TAO') : '--'}</td><td>${s.remainingText}</td></tr>`
+  ).join('') || '<tr><td colspan="5">暂无免疫期 subnet</td></tr>';
 }
 
 function facts(map) {
