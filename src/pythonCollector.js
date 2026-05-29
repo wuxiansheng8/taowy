@@ -13,7 +13,12 @@ export class PythonCollector {
   async collect() {
     const key = this.pool.nextKey();
     const endpoint = toWsEndpoint(key.endpoint);
-    this.logger.info('Python subnet 采集使用 Dwellir API', { name: key.name || key.id });
+    const collectorApi = {
+      name: key.name || key.id,
+      id: key.id,
+      endpoint: maskEndpoint(endpoint)
+    };
+    this.logger.info('Python subnet 采集使用 Dwellir API', collectorApi);
     const py = process.env.PYTHON_BIN || process.env.PYTHON || 'python3';
     const script = path.join(rootDir, 'scripts', 'bt_collector.py');
     const cfg = this.getConfig();
@@ -23,6 +28,7 @@ export class PythonCollector {
       '--endpoint', endpoint,
       '--block-time-ms', String(cfg.collector.blockTimeMs || 12000)
     ], timeoutMs);
+    data.collectorApi = collectorApi;
     return data;
   }
 
@@ -88,4 +94,8 @@ function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(String(value).replaceAll(',', ''));
   return Number.isFinite(n) ? n : null;
+}
+
+function maskEndpoint(endpoint) {
+  return endpoint.replace(/(api-bittensor-mainnet\.n\.dwellir\.com\/).+$/i, '$1******');
 }

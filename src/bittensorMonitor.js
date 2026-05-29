@@ -62,6 +62,7 @@ export class BittensorMonitor {
     this.pollTimer = null;
     this.wsRotateTimer = null;
     this.api = null;
+    this.currentWsApi = null;
     this.wsConnecting = null;
     this.lastSubnetSnapshot = new Map();
     this.volumeHistory = new Map();
@@ -121,7 +122,9 @@ export class BittensorMonitor {
       await this.applyCollected(data, reason);
       this.logger.info(`${reason}完成`, {
         block: this.state.currentBlock,
-        subnetCount: this.state.race.currentSubnetCount
+        subnetCount: this.state.race.currentSubnetCount,
+        collectorApi: data.collectorApi || null,
+        wsApi: this.currentWsApi || null
       });
       this.persistState();
       this.emit('refresh');
@@ -292,6 +295,11 @@ export class BittensorMonitor {
 
         const previousApi = this.api;
         this.api = api;
+        this.currentWsApi = {
+          name: key.name || key.id,
+          id: key.id,
+          endpoint: maskEndpoint(endpoint)
+        };
         if (previousApi) previousApi.disconnect().catch(() => {});
 
         this.attachDisconnectHandler(api);
@@ -299,7 +307,7 @@ export class BittensorMonitor {
         // 初始化打新钱包
         getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
 
-        this.logger.info('已订阅 Bittensor 新区块头', { reason, endpoint: maskEndpoint(endpoint), attempt: attempt + 1, round });
+        this.logger.info('已订阅 Bittensor 新区块头', { reason, api: this.currentWsApi, attempt: attempt + 1, round });
         return;
       } catch (error) {
         lastError = error;
@@ -371,6 +379,7 @@ export class BittensorMonitor {
           blockNumber,
           event: text,
           eventLabel: translated.label,
+          wsApi: this.currentWsApi || null,
           data: event.data?.toHuman?.() || event.data?.toString?.()
         };
         if (translated.lifecycle) {
