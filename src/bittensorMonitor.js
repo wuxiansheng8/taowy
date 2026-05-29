@@ -8,8 +8,8 @@ const STATE_VERSION = 6;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
 const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd';
 const TAO_USD_CACHE_MS = 5 * 60 * 1000;
-const WS_CONNECT_TIMEOUT_MS = 4000;
-const WS_SUBSCRIBE_TIMEOUT_MS = 4000;
+const WS_CONNECT_TIMEOUT_MS = 8000;
+const WS_SUBSCRIBE_TIMEOUT_MS = 8000;
 const WS_URGENT_RECONNECT_ROUNDS = 2;
 
 const ZERO_STATE = {
