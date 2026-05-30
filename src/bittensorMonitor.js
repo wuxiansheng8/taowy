@@ -4,13 +4,16 @@ import { blocksToDuration } from './time.js';
 import { loadState, saveState } from './storage.js';
 import { getSniper } from './sniper.js';
 
-const STATE_VERSION = 6;
+const STATE_VERSION = 7;
 const MAX_FLOW_TAO_PER_EVENT = 100000;
+const MAX_FLOW_ALPHA_PER_EVENT = 1000000000;
 const TAO_USD_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd';
 const TAO_USD_CACHE_MS = 5 * 60 * 1000;
 const WS_CONNECT_TIMEOUT_MS = 8000;
 const WS_SUBSCRIBE_TIMEOUT_MS = 8000;
 const WS_URGENT_RECONNECT_ROUNDS = 2;
+const CHAIN_FLOW_RECENT_RETENTION_MS = 48 * 60 * 60 * 1000;
+const CHAIN_FLOW_DAILY_RETENTION_DAYS = 3;
 
 const ZERO_STATE = {
   status: 'waiting',
@@ -38,10 +41,13 @@ const ZERO_STATE = {
   race: {},
   chainFlow: {
     stakeTaoToday: 0,
-    unstakeTaoToday: 0,
+    unstakeAlphaToday: 0,
     stakeEventsToday: 0,
     unstakeEventsToday: 0,
+    indexedToBlock: 0,
+    indexing: false,
     utcDate: utcDateKey(Date.now()),
+    daily: {},
     recent: []
   },
   launches: [],
@@ -97,6 +103,7 @@ export class BittensorMonitor {
     this.schedule();
     this.connectWs().catch((error) => this.logger.warn('新区块订阅启动失败', { error: error.message }));
     this.refresh('启动采集').catch((error) => this.recordError(error));
+    this.backfillTodayChainFlow('启动补扫').catch((error) => this.logger.warn('今日质押/解质押补扫失败', { error: error.message }));
   }
 
   schedule() {
@@ -308,6 +315,7 @@ export class BittensorMonitor {
         getSniper().init(this.api).catch(e => this.logger.error('Sniper init error:', e));
 
         this.logger.info('已订阅 Bittensor 新区块头', { reason, api: this.currentWsApi, attempt: attempt + 1, round });
+        this.backfillTodayChainFlow(`${reason}后补扫`).catch((error) => this.logger.warn('今日质押/解质押补扫失败', { error: error.message }));
         return;
       } catch (error) {
         lastError = error;
@@ -411,23 +419,129 @@ export class BittensorMonitor {
         const raw = event.data?.toJSON?.() || human;
         const flow = flowFromStakeEvent(method, raw);
         if (flow) {
-          this.state.chainFlow.recent.push({
+          this.recordChainFlow(flow, {
             ts: Date.now(),
-            utcDate: utcDateKey(Date.now()),
             blockNumber,
+            eventIndex: index,
             event: text,
-            eventLabel: flow.flowType === 'stake' ? '买入/质押' : '卖出/解质押',
-            flowType: flow.flowType,
-            amountTao: flow.amountTao,
-            netuid: flow.netuid,
-            data: human
+            data: human,
+            source: 'ws'
           });
-          this.state.chainFlow = this.prunedChainFlow();
+          this.state.chainFlow.indexedToBlock = Math.max(Number(this.state.chainFlow.indexedToBlock || 0), blockNumber);
           this.persistState();
           this.emit('flow');
         }
       }
     }
+  }
+
+  async backfillTodayChainFlow(reason = '今日补扫') {
+    const api = this.api;
+    if (!api?.isConnected) return;
+    if (this.state.chainFlow?.indexing) return;
+    const currentBlock = Number(this.state.currentBlock || 0);
+    if (!Number.isFinite(currentBlock) || currentBlock <= 0) return;
+
+    const today = utcDateKey(Date.now());
+    const cfg = this.getConfig().collector || {};
+    const blockTimeMs = Math.max(1000, Number(cfg.blockTimeMs || 12000));
+    const utcStart = Date.parse(`${today}T00:00:00.000Z`);
+    const approxStart = Math.max(1, currentBlock - Math.ceil((Date.now() - utcStart) / blockTimeMs) - 20);
+    const fromBlock = Math.max(approxStart, Number(this.state.chainFlow.indexedToBlock || 0) + 1);
+    if (fromBlock > currentBlock) return;
+
+    if (fromBlock <= approxStart || !this.state.chainFlow.daily?.[today]) {
+      this.state.chainFlow = resetDailyChainFlow(this.state.chainFlow, today);
+    }
+    this.state.chainFlow.indexing = true;
+    this.logger.info('开始补扫今日质押/解质押事件', { reason, fromBlock, toBlock: currentBlock });
+    let scanned = 0;
+    try {
+      for (let blockNumber = fromBlock; blockNumber <= currentBlock; blockNumber += 1) {
+        const hash = await api.rpc.chain.getBlockHash(blockNumber);
+        const events = await api.query.system.events.at(hash);
+        this.recordChainFlowEvents(blockNumber, events, {
+          ts: blockTimestampFromCurrent(blockNumber, currentBlock, blockTimeMs),
+          source: 'backfill'
+        });
+        this.state.chainFlow.indexedToBlock = blockNumber;
+        scanned += 1;
+        if (scanned % 100 === 0) await delay(1);
+      }
+      this.logger.info('今日质押/解质押事件补扫完成', {
+        fromBlock,
+        toBlock: currentBlock,
+        scanned,
+        stakeTaoToday: this.state.chainFlow.stakeTaoToday,
+        unstakeAlphaToday: this.state.chainFlow.unstakeAlphaToday
+      });
+    } finally {
+      this.state.chainFlow.indexing = false;
+      this.state.chainFlow = this.prunedChainFlow();
+      this.persistState();
+      this.emit('flow');
+    }
+  }
+
+  recordChainFlowEvents(blockNumber, events, { ts = Date.now(), source = 'backfill' } = {}) {
+    for (const [index, record] of events.entries()) {
+      const { event } = record;
+      const section = event.section || '';
+      const method = event.method || '';
+      if (!/^subtensor(Module)?$/i.test(section) || !/^(StakeAdded|StakeRemoved)$/i.test(method)) continue;
+      const human = event.data?.toHuman?.() || event.data?.toString?.();
+      const raw = event.data?.toJSON?.() || human;
+      const flow = flowFromStakeEvent(method, raw);
+      if (!flow) continue;
+      this.recordChainFlow(flow, {
+        ts,
+        blockNumber,
+        eventIndex: index,
+        event: `${section}.${method}`,
+        data: human,
+        source
+      });
+    }
+  }
+
+  recordChainFlow(flow, meta) {
+    const utcDate = utcDateKey(meta.ts || Date.now());
+    this.state.chainFlow = this.prunedChainFlowFrom(this.state.chainFlow);
+    const daily = { ...(this.state.chainFlow.daily || {}) };
+    const bucket = normalizeDailyFlowBucket(daily[utcDate], utcDate);
+    const eventId = `${meta.blockNumber}-${meta.eventIndex}-${flow.flowType}`;
+    if (bucket.seen.includes(eventId)) {
+      this.state.chainFlow.daily = daily;
+      return false;
+    }
+
+    bucket.seen.push(eventId);
+    if (flow.flowType === 'stake') {
+      bucket.stakeTao += flow.amount;
+      bucket.stakeEvents += 1;
+    } else {
+      bucket.unstakeAlpha += flow.amount;
+      bucket.unstakeEvents += 1;
+    }
+    daily[utcDate] = bucket;
+
+    this.state.chainFlow.daily = daily;
+    this.state.chainFlow.recent.push({
+      ts: meta.ts || Date.now(),
+      utcDate,
+      blockNumber: meta.blockNumber,
+      eventIndex: meta.eventIndex,
+      event: meta.event,
+      eventLabel: flow.flowType === 'stake' ? '买入/质押' : '卖出/解质押',
+      flowType: flow.flowType,
+      amount: flow.amount,
+      unit: flow.unit,
+      netuid: flow.netuid,
+      source: meta.source,
+      data: meta.data
+    });
+    this.state.chainFlow = this.prunedChainFlowFrom(this.state.chainFlow);
+    return true;
   }
 
   restoreState() {
@@ -439,11 +553,14 @@ export class BittensorMonitor {
         s.registrationCostPaid = null;
       }
     }
+    const restoredChainFlow = saved.version >= 7
+      ? this.prunedChainFlowFrom(saved.state.chainFlow)
+      : migrateLegacyChainFlow(saved.state.chainFlow);
     this.state = {
       ...structuredClone(ZERO_STATE),
       ...saved.state,
       subnets,
-      chainFlow: saved.version === STATE_VERSION ? this.prunedChainFlowFrom(saved.state.chainFlow) : structuredClone(ZERO_STATE.chainFlow),
+      chainFlow: restoredChainFlow,
       errors: []
     };
     this.lastSubnetSnapshot = buildSubnetSnapshot(this.state.subnets || []);
@@ -484,26 +601,24 @@ export class BittensorMonitor {
 
   prunedChainFlowFrom(chainFlow) {
     const today = utcDateKey(Date.now());
-    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    const cutoff = Date.now() - CHAIN_FLOW_RECENT_RETENTION_MS;
     const recent = (chainFlow?.recent || [])
       .filter((item) => item.ts >= cutoff)
       .map(normalizeFlowItem)
       .filter(Boolean)
-      .slice(-500);
-    const todayItems = recent.filter((item) => item.utcDate === today);
-    const stakeItems = todayItems.filter((item) => item.flowType === 'stake');
-    const unstakeItems = todayItems.filter((item) => item.flowType === 'unstake');
-    const stakeKnown = stakeItems.filter((item) => Number.isFinite(item.amountTao)).length;
-    const unstakeKnown = unstakeItems.filter((item) => Number.isFinite(item.amountTao)).length;
+      .slice(-5000);
+    const daily = pruneDailyFlow(chainFlow?.daily, today);
+    const todayBucket = normalizeDailyFlowBucket(daily[today], today);
     return {
-      stakeTaoToday: sumAmounts(stakeItems),
-      unstakeTaoToday: sumAmounts(unstakeItems),
-      stakeEventsToday: stakeItems.length,
-      unstakeEventsToday: unstakeItems.length,
-      stakeAmountEventsToday: stakeKnown,
-      unstakeAmountEventsToday: unstakeKnown,
-      amountReliable: stakeKnown === stakeItems.length && unstakeKnown === unstakeItems.length,
+      stakeTaoToday: roundAmount(todayBucket.stakeTao),
+      unstakeAlphaToday: roundAmount(todayBucket.unstakeAlpha),
+      unstakeTaoToday: null,
+      stakeEventsToday: todayBucket.stakeEvents,
+      unstakeEventsToday: todayBucket.unstakeEvents,
+      indexedToBlock: Number(chainFlow?.indexedToBlock || 0),
+      indexing: Boolean(chainFlow?.indexing),
       utcDate: today,
+      daily,
       recent
     };
   }
@@ -709,36 +824,38 @@ function flowFromStakeEvent(method, data) {
   if (/^StakeAdded$/i.test(name)) {
     const netuid = eventNumber(data, 4, 'netuid');
     if (isRootNetuid(netuid)) return null;
-    return buildFlow('stake', eventTao(data, 2, 'tao_amount'), netuid);
+    return buildFlow('stake', eventTokenAmount(data, 2, 'tao_amount', 1e9), netuid, 'TAO', MAX_FLOW_TAO_PER_EVENT);
   }
   if (/^StakeRemoved$/i.test(name)) {
     const netuid = eventNumber(data, 4, 'netuid');
     if (isRootNetuid(netuid)) return null;
-    return buildFlow('unstake', eventTao(data, 2, 'tao_amount'), netuid);
+    return buildFlow('unstake', eventTokenAmount(data, 2, 'alpha_amount', 1e9), netuid, 'Alpha', MAX_FLOW_ALPHA_PER_EVENT);
   }
   return null;
 }
 
-function buildFlow(flowType, amountTao, netuid) {
-  if (!Number.isFinite(amountTao) || amountTao <= 0 || amountTao > MAX_FLOW_TAO_PER_EVENT) return null;
+function buildFlow(flowType, amount, netuid, unit, maxAmount) {
+  if (!Number.isFinite(amount) || amount <= 0 || amount > maxAmount) return null;
   if (!Number.isFinite(Number(netuid)) || isRootNetuid(netuid)) return null;
-  return { flowType, amountTao, netuid: Number(netuid) };
+  return { flowType, amount, unit, netuid: Number(netuid) };
 }
 
 function normalizeFlowItem(item) {
   if (!item || !['stake', 'unstake'].includes(item.flowType)) return null;
-  const amountTao = Number(item.amountTao);
+  const amount = Number(item.amount ?? item.amountTao);
   const netuid = Number(item.netuid);
-  if (!Number.isFinite(amountTao) || amountTao <= 0 || amountTao > MAX_FLOW_TAO_PER_EVENT) return null;
+  const unit = item.unit || (item.flowType === 'stake' ? 'TAO' : 'Alpha');
+  const maxAmount = item.flowType === 'stake' ? MAX_FLOW_TAO_PER_EVENT : MAX_FLOW_ALPHA_PER_EVENT;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > maxAmount) return null;
   if (!Number.isFinite(netuid) || isRootNetuid(netuid)) return null;
-  return { ...item, amountTao, netuid };
+  return { ...item, amount, unit, netuid };
 }
 
-function eventTao(data, index, key) {
+function eventTokenAmount(data, index, key, scale) {
   const raw = eventValue(data, index, key);
   const n = parseNumeric(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
-  return n / 1e9;
+  return n / scale;
 }
 
 function eventNumber(data, index, key) {
@@ -771,8 +888,59 @@ function isRootNetuid(netuid) {
   return Number(netuid) === 0;
 }
 
-function sumAmounts(items) {
-  return items.reduce((total, item) => total + (Number.isFinite(item.amountTao) ? item.amountTao : 0), 0);
+function normalizeDailyFlowBucket(bucket, utcDate) {
+  return {
+    utcDate,
+    stakeTao: Number(bucket?.stakeTao || 0),
+    unstakeAlpha: Number(bucket?.unstakeAlpha || 0),
+    stakeEvents: Number(bucket?.stakeEvents || 0),
+    unstakeEvents: Number(bucket?.unstakeEvents || 0),
+    seen: Array.isArray(bucket?.seen) ? bucket.seen.slice(-20000) : []
+  };
+}
+
+function pruneDailyFlow(daily = {}, today = utcDateKey(Date.now())) {
+  const keys = Object.keys(daily || {}).sort().slice(-CHAIN_FLOW_DAILY_RETENTION_DAYS);
+  if (!keys.includes(today)) keys.push(today);
+  return Object.fromEntries(keys.map((key) => [key, normalizeDailyFlowBucket(daily[key], key)]));
+}
+
+function resetDailyChainFlow(chainFlow, today = utcDateKey(Date.now())) {
+  const next = {
+    ...structuredClone(ZERO_STATE.chainFlow),
+    ...(chainFlow || {}),
+    utcDate: today,
+    daily: pruneDailyFlow(chainFlow?.daily, today),
+    recent: Array.isArray(chainFlow?.recent) ? chainFlow.recent : []
+  };
+  next.daily[today] = normalizeDailyFlowBucket(null, today);
+  next.indexedToBlock = 0;
+  return next;
+}
+
+function migrateLegacyChainFlow(chainFlow) {
+  const today = utcDateKey(Date.now());
+  const next = {
+    ...structuredClone(ZERO_STATE.chainFlow),
+    ...(chainFlow || {}),
+    daily: {},
+    recent: []
+  };
+  next.daily[today] = normalizeDailyFlowBucket(null, today);
+  return next;
+}
+
+function roundAmount(value) {
+  const n = Number(value || 0);
+  return Number(n.toFixed(9));
+}
+
+function blockTimestampFromCurrent(blockNumber, currentBlock, blockTimeMs) {
+  return Date.now() - Math.max(0, currentBlock - blockNumber) * blockTimeMs;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function utcDateKey(ts) {

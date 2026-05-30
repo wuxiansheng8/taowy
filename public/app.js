@@ -639,8 +639,9 @@ function fmtAmount(value) {
 }
 
 function flowText(flow = {}) {
-  const value = `${fmtAmount(flow.stakeTaoToday)}/${fmtAmount(flow.unstakeTaoToday)}`;
-  if (flow.amountReliable === false) return `${value}（部分金额未识别）`;
+  const unstake = flow.unstakeAlphaToday ?? flow.unstakeTaoToday;
+  const value = `${fmtAmount(flow.stakeTaoToday)}/${fmtAmount(unstake)}`;
+  if (flow.indexing) return `${value}（补扫中）`;
   return value;
 }
 
