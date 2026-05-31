@@ -642,7 +642,7 @@ export class BittensorMonitor {
       stakeEventsToday: todayBucket.stakeEvents,
       unstakeEventsToday: todayBucket.unstakeEvents,
       indexedToBlock: Number(chainFlow?.indexedToBlock || 0),
-      indexing: Boolean(chainFlow?.indexing),
+      indexing: false,
       utcDate: today,
       daily,
       recent
