@@ -14,6 +14,8 @@ const WS_SUBSCRIBE_TIMEOUT_MS = 8000;
 const WS_URGENT_RECONNECT_ROUNDS = 2;
 const CHAIN_FLOW_RECENT_RETENTION_MS = 48 * 60 * 60 * 1000;
 const CHAIN_FLOW_DAILY_RETENTION_DAYS = 3;
+const CHAIN_FLOW_CHECKPOINT_INTERVAL_MS = 10 * 60 * 1000;
+const CHAIN_FLOW_BACKFILL_CHECKPOINT_BLOCKS = 50;
 
 const ZERO_STATE = {
   status: 'waiting',
@@ -75,6 +77,7 @@ export class BittensorMonitor {
     this.priceHistory = new Map();
     this.taoUsdCache = { value: null, fetchedAt: 0 };
     this.refreshPromise = null;
+    this.lastChainFlowCheckpointAt = 0;
     this.restoreState();
     getSniper().setMonitor(this);
   }
@@ -300,6 +303,7 @@ export class BittensorMonitor {
         api = await this.createWsApi(endpoint);
         await this.subscribeNewHeads(api);
 
+        this.persistChainFlowCheckpoint({ force: true });
         const previousApi = this.api;
         this.api = api;
         this.currentWsApi = {
@@ -376,6 +380,7 @@ export class BittensorMonitor {
   }
 
   async handleEvents(blockNumber, events) {
+    let flowChanged = false;
     for (const [index, record] of events.entries()) {
       const { event } = record;
       const section = event.section || '';
@@ -427,12 +432,13 @@ export class BittensorMonitor {
             data: human,
             source: 'ws'
           });
-          this.state.chainFlow.indexedToBlock = Math.max(Number(this.state.chainFlow.indexedToBlock || 0), blockNumber);
-          this.persistState();
-          this.emit('flow');
+          flowChanged = true;
         }
       }
     }
+    this.advanceChainFlowIndexedToBlock(blockNumber);
+    this.persistChainFlowCheckpoint({ force: flowChanged });
+    if (flowChanged) this.emit('flow');
   }
 
   async backfillTodayChainFlow(reason = '今日补扫') {
@@ -464,8 +470,11 @@ export class BittensorMonitor {
           ts: blockTimestampFromCurrent(blockNumber, currentBlock, blockTimeMs),
           source: 'backfill'
         });
-        this.state.chainFlow.indexedToBlock = blockNumber;
+        this.advanceChainFlowIndexedToBlock(blockNumber);
         scanned += 1;
+        if (scanned % CHAIN_FLOW_BACKFILL_CHECKPOINT_BLOCKS === 0) {
+          this.persistChainFlowCheckpoint({ force: true });
+        }
         if (scanned % 100 === 0) await delay(1);
       }
       this.logger.info('今日质押/解质押事件补扫完成', {
@@ -478,9 +487,26 @@ export class BittensorMonitor {
     } finally {
       this.state.chainFlow.indexing = false;
       this.state.chainFlow = this.prunedChainFlow();
-      this.persistState();
+      this.persistChainFlowCheckpoint({ force: true });
       this.emit('flow');
     }
+  }
+
+  advanceChainFlowIndexedToBlock(blockNumber) {
+    const current = Number(this.state.chainFlow?.indexedToBlock || 0);
+    const next = Number(blockNumber);
+    if (!Number.isFinite(next) || next <= 0) return;
+    this.state.chainFlow.indexedToBlock = Math.max(current, next);
+  }
+
+  persistChainFlowCheckpoint({ force = false } = {}) {
+    const now = Date.now();
+    if (!force && now - this.lastChainFlowCheckpointAt < CHAIN_FLOW_CHECKPOINT_INTERVAL_MS) {
+      return false;
+    }
+    this.lastChainFlowCheckpointAt = now;
+    this.persistState();
+    return true;
   }
 
   recordChainFlowEvents(blockNumber, events, { ts = Date.now(), source = 'backfill' } = {}) {
