@@ -71,6 +71,22 @@
             <tbody id="launchRows"></tbody>
           </table>
         </div>
+
+        <div class="risk-panel" style="margin-top: 15px;">
+          <h3>子网改名抢跑记录</h3>
+          <table>
+            <thead><tr><th>发现时间</th><th>子网</th><th>旧名称</th><th>新名称</th><th>发现区块</th></tr></thead>
+            <tbody id="renameLaunchRows"></tbody>
+          </table>
+        </div>
+
+        <div class="risk-panel" style="margin-top: 15px;">
+          <h3>冷键交换抢跑记录</h3>
+          <table>
+            <thead><tr><th>发现时间</th><th>子网</th><th>子网名称</th><th>旧所有者冷键</th><th>新冷键 Hash</th><th>发现区块</th></tr></thead>
+            <tbody id="swapLaunchRows"></tbody>
+          </table>
+        </div>
         <form id="sniperForm" class="settings">
           <h3>自动打新 (Auto-Snipe)</h3>
           <p class="desc">发现新子网时自动使用配置的钱包买入 Alpha。助记词请在 .env 的 SNIPER_MNEMONIC 中配置。</p>
