@@ -62,67 +62,6 @@ def get_network_immunity_period(sub):
             return int(parsed)
     return 864000
 
-def alpha_storage_as_number(value):
-    raw = plain_value(value)
-    try:
-        return float(raw) / 1e9
-    except Exception:
-        return 0.0
-
-def key_parts(key):
-    raw = plain_value(key)
-    if isinstance(raw, (list, tuple)):
-        return [plain_value(part) for part in raw]
-    return [raw]
-
-def netuid_from_storage_key(key):
-    for part in reversed(key_parts(key)):
-        try:
-            netuid = int(part)
-        except Exception:
-            continue
-        if netuid >= 0:
-            return netuid
-    return None
-
-def get_all_alpha_staked(sub):
-    try:
-        totals = {}
-        for key, val in sub.query_map("SubtensorModule", "TotalHotkeyAlpha"):
-            netuid = netuid_from_storage_key(key)
-            if netuid is None:
-                continue
-            totals[netuid] = totals.get(netuid, 0.0) + alpha_storage_as_number(val)
-        return totals if totals else None
-    except Exception:
-        return None
-
-def get_alpha_staked(sub, netuid):
-    try:
-        keys = sub.query_map(
-            module="SubtensorModule",
-            storage_function="Keys",
-            params=[netuid],
-        )
-        storage_keys = []
-        for _uid, hotkey in keys:
-            storage_keys.append(
-                sub.create_storage_key(
-                    pallet="SubtensorModule",
-                    storage_function="TotalHotkeyAlpha",
-                    params=[plain_value(hotkey), netuid],
-                )
-            )
-        if not storage_keys:
-            return 0.0
-        total = 0.0
-        for _key, val in sub.query_multi(storage_keys):
-            if val is not None:
-                total += alpha_storage_as_number(val)
-        return total
-    except Exception:
-        return None
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
@@ -156,7 +95,6 @@ def main():
         immunity_periods = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "ImmunityPeriod")}
         tempos = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "Tempo")}
         volumes = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetVolume")}
-        alpha_staked_by_netuid = get_all_alpha_staked(sub)
         
         symbols = {}
         for k, v in sub.query_map("SubtensorModule", "TokenSymbol"):
@@ -200,7 +138,6 @@ def main():
             a_in = alpha_in.get(netuid, 0) / 1e9
             a_out = alpha_out.get(netuid, 0) / 1e9
             t_in = tao_in.get(netuid, 0) / 1e9
-            a_staked = alpha_staked_by_netuid.get(netuid) if alpha_staked_by_netuid is not None else get_alpha_staked(sub, netuid)
             price = t_in / a_in if a_in > 0 else 0.0
             
             subnets.append({
@@ -221,7 +158,7 @@ def main():
                 "alphaIn": a_in,
                 "alphaOut": a_out,
                 "taoIn": t_in,
-                "alphaStaked": a_staked
+                "alphaStaked": None
             })
 
         output = {
