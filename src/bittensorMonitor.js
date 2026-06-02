@@ -818,23 +818,20 @@ function computeLiquidationPrice(item) {
   const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
   const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
   const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
-  const protocolAlpha = nullableNumber(item.subnetProtocolAlpha ?? item.subnet_protocol_alpha ?? item.protocolAlpha);
-
-  // 流通量 = 池内代币 (alphaIn) + 用户持有代币 (alphaOut - protocolAlpha)
-  const circulatingSupply = (alphaIn ?? 0) + (alphaOut ?? 0) - (protocolAlpha ?? 0);
+  const totalAlpha = (alphaIn ?? 0) + (alphaOut ?? 0);
 
   if (
     !Number.isFinite(taoIn) ||
     !Number.isFinite(alphaIn) ||
     !Number.isFinite(alphaOut) ||
-    !Number.isFinite(circulatingSupply) ||
+    !Number.isFinite(totalAlpha) ||
     taoIn <= 0 ||
-    circulatingSupply <= 0
+    totalAlpha <= 0
   ) {
     return null;
   }
 
-  return taoIn / circulatingSupply;
+  return taoIn / totalAlpha;
 }
 
 function hasRealSubnetData(subnets) {
