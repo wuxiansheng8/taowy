@@ -85,10 +85,6 @@ def main():
         registered_at = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "NetworkRegisteredAt")}
         alpha_in = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetAlphaIn")}
         alpha_out = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetAlphaOut")}
-        try:
-            subnet_protocol_alpha = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetProtocolAlpha")}
-        except Exception:
-            subnet_protocol_alpha = {}
         tao_in = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetTAO")}
         
         moving_prices = {}
@@ -161,7 +157,6 @@ def main():
                 "lastStep": None,
                 "alphaIn": a_in,
                 "alphaOut": a_out,
-                "subnetProtocolAlpha": subnet_protocol_alpha.get(netuid, 0) / 1e9,
                 "taoIn": t_in,
                 "alphaStaked": None
             })

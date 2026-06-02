@@ -818,9 +818,8 @@ function computeLiquidationPrice(item) {
   const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
   const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
   const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
-  const protocolAlpha = nullableNumber(item.subnetProtocolAlpha ?? item.subnet_protocol_alpha ?? item.protocolAlpha);
 
-  const totalAlpha = (alphaIn ?? 0) + (alphaOut ?? 0) + (protocolAlpha ?? 0);
+  const totalAlpha = (alphaIn ?? 0) + (alphaOut ?? 0);
 
   if (
     !Number.isFinite(taoIn) ||
