@@ -4,7 +4,7 @@ let balanceRefreshTimer = null;
 
 const pages = {
   dashboard: ['总览', $('#dashboardPage')],
-  launches: ['新子网狙击抢跑', $('#launchesPage')],
+  launches: ['子网机会抢跑', $('#launchesPage')],
   race: ['赛马/淘汰风险', $('#racePage')],
   settings: ['系统设置', $('#settingsPage')],
   logs: ['日志', $('#logsPage')]
