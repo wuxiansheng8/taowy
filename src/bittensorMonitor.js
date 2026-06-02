@@ -445,8 +445,20 @@ export class BittensorMonitor {
             eventLabel: `SN${netuid} 冷链交换宣布`,
             data: `旧所有者: ${oldColdkey}, 新冷键Hash: ${newHash}`
           };
+          const estTime = new Date(Date.now() + 36000 * 12 * 1000);
+          const formattedEstTime = new Intl.DateTimeFormat('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          }).format(estTime).replace(/\//g, '-');
+
           this.notifier.alert(
-            `🔑 🔄 关于 🖥️ **${subnet.name} (SN${netuid})** 的冷键交换操作已经宣布。该子网 owner 已宣布冷键交换，新冷键 hash: **${maskedHash}**\n外部编号： ${blockNumber}-${String(index).padStart(4, '0')}`,
+            `🔑 🔄 关于 🖥️ **${subnet.name} (SN${netuid})** 的冷键交换操作已经宣布。该子网 owner 已宣布冷键交换，新冷键 hash: **${maskedHash}**\n完成交换时间：**${formattedEstTime}**\n区块头：**${blockNumber}-${String(index).padStart(4, '0')}**`,
             payload
           ).catch(() => {});
           this.emit('alert');
