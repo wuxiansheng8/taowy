@@ -600,7 +600,7 @@ function fmtTokenPrice(value) {
   if (value === null || value === undefined || value === '') return 'τ--';
   const n = Number(value);
   if (!Number.isFinite(n)) return `τ${escapeHtml(String(value))}`;
-  return `τ${n.toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  return `τ${n.toLocaleString('zh-CN', { minimumFractionDigits: 5, maximumFractionDigits: 5 })}`;
 }
 
 function priceChangeBadge(value) {
