@@ -143,6 +143,7 @@ def main():
             subnets.append({
                 "netuid": netuid,
                 "name": name,
+                "ownerColdkey": owners.get(netuid),
                 "alphaPrice": price,
                 "emaPrice": moving_prices.get(netuid, 0.0),
                 "registrationCost": registration_cost,

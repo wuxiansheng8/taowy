@@ -28,9 +28,17 @@ class Sniper {
 
   clearProcessedNetuid(netuid) {
     const n = Number(netuid);
-    this.processedNetuids.delete(n);
-    this.processedNetuids.delete(String(n));
-    this.logger.info(`[打新] 清除子网 #${netuid} 的已处理标记，允许重新购买。`);
+    for (const key of this.processedNetuids.keys()) {
+      if (
+        key === String(n) ||
+        key.startsWith(`newSubnet:${n}`) ||
+        key.startsWith(`rename:${n}:`) || key === `rename:${n}` ||
+        key.startsWith(`coldkeySwap:${n}:`) || key === `coldkeySwap:${n}`
+      ) {
+        this.processedNetuids.delete(key);
+      }
+    }
+    this.logger.info(`[打新] 清除子网 #${netuid} 的全部去重标记，允许重新触发。`);
   }
 
   configure({ getConfig, logger, notifier, pool }) {
@@ -163,6 +171,7 @@ class Sniper {
       requireEnabled: true,
       enabledKey: 'enabled',
       dedupe: true,
+      dedupeKey: `newSubnet:${netuid}`,
       label: '多钱包打新',
       triggerText: '多钱包打新触发',
       eventData
@@ -187,8 +196,22 @@ class Sniper {
       requireEnabled: true,
       enabledKey: 'renameEnabled',
       dedupe: true,
+      dedupeKey: `rename:${numericNetuid}`,
       label: '改名打新',
       triggerText: `子网改名打新触发 (${oldName} -> ${name})`
+    });
+  }
+
+  async onColdkeySwapAnnounced(netuid, name, oldColdkey, hash) {
+    const numericNetuid = Number(netuid);
+    this.logger.info(`[交换抢跑] 检测到子网 #${netuid} 所有权发生 coldkey swap 宣布: ${oldColdkey} -> ${hash}，触发自动抢跑...`);
+    return this.executeSubnetBuy(numericNetuid, name, {
+      requireEnabled: true,
+      enabledKey: 'swapEnabled',
+      dedupe: true,
+      dedupeKey: `coldkeySwap:${numericNetuid}`,
+      label: '冷键交换抢跑',
+      triggerText: `冷键交换抢跑触发 (${oldColdkey} -> ${hash})`
     });
   }
 
@@ -234,33 +257,50 @@ class Sniper {
       return { ok: false, skipped: true, reason };
     }
     const targetHotkey = target.hotkey;
+    const dedupeKey = options.dedupeKey || netuid;
     if (options.dedupe) {
-      const processedAt = this.processedNetuids.get(netuid);
+      const processedAt = this.processedNetuids.get(dedupeKey);
       if (processedAt && (Date.now() - processedAt < 24 * 60 * 60 * 1000)) {
-        return { ok: false, skipped: true, reason: '子网已在24小时内处理过' };
+        return { ok: false, skipped: true, reason: '该事件已在24小时内处理过' };
       }
     }
-    if (options.dedupe) this.processedNetuids.set(netuid, Date.now());
+    if (options.dedupe) this.processedNetuids.set(dedupeKey, Date.now());
 
     const activePairs = [];
     const walletSettings = settings.wallets || {};
     const isRename = enabledKey === 'renameEnabled';
+    const isSwap = enabledKey === 'swapEnabled';
+
     const amountTao = isRename
       ? (settings.renameAmountTao ?? settings.amountTao ?? 1.0)
+      : isSwap
+      ? (settings.swapAmountTao ?? settings.amountTao ?? 1.0)
       : (settings.amountTao ?? 1.0);
+
     const rawMaxRetries = isRename
       ? (settings.renameMaxRetries ?? settings.maxRetries ?? 5)
+      : isSwap
+      ? (settings.swapMaxRetries ?? settings.maxRetries ?? 5)
       : (settings.maxRetries ?? 5);
     const maxRetries = Number(rawMaxRetries);
+
     const burstCount = Math.max(1, Math.floor(Number(isRename
       ? (settings.renameBurstCount ?? settings.burstCount ?? 1)
+      : isSwap
+      ? (settings.swapBurstCount ?? settings.burstCount ?? 1)
       : (settings.burstCount ?? 1)
     )));
+
     const retryInterval = isRename
       ? (settings.renameRetryIntervalMs ?? settings.retryIntervalMs ?? 200)
+      : isSwap
+      ? (settings.swapRetryIntervalMs ?? settings.retryIntervalMs ?? 200)
       : (settings.retryIntervalMs ?? 200);
+
     const txTimeoutMs = isRename
       ? (settings.renameTxTimeoutMs ?? settings.txTimeoutMs ?? 5000)
+      : isSwap
+      ? (settings.swapTxTimeoutMs ?? settings.txTimeoutMs ?? 5000)
       : (settings.txTimeoutMs ?? 5000);
 
     for (const [address, data] of this.walletMap.entries()) {

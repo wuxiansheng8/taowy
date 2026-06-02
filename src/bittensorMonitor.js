@@ -381,6 +381,17 @@ export class BittensorMonitor {
 
   async handleEvents(blockNumber, events) {
     let flowChanged = false;
+
+    const subnetOwners = new Map();
+    for (const s of this.state.subnets || []) {
+      const owner = s.ownerColdkey || '';
+      if (!owner) continue;
+      if (!subnetOwners.has(owner)) {
+        subnetOwners.set(owner, []);
+      }
+      subnetOwners.get(owner).push(s);
+    }
+
     for (const [index, record] of events.entries()) {
       const { event } = record;
       const section = event.section || '';
@@ -392,7 +403,6 @@ export class BittensorMonitor {
           blockNumber,
           event: text,
           eventLabel: translated.label,
-          wsApi: this.currentWsApi || null,
           data: event.data?.toHuman?.() || event.data?.toString?.()
         };
         if (translated.lifecycle) {
@@ -419,6 +429,59 @@ export class BittensorMonitor {
           this.logger.info(`区块 ${blockNumber}：${translated.label}`, payload);
         }
       }
+
+      if (/^subtensor(Module)?$/i.test(section) && /^ColdkeySwapAnnounced$/i.test(method)) {
+        const data = event.data?.toJSON() || [];
+        const oldColdkey = data[0];
+        const newHash = data[1] || '';
+        const maskedHash = newHash ? `${newHash.slice(0, 6)}..${newHash.slice(-4)}` : '未知';
+
+        const subnets = subnetOwners.get(oldColdkey) || [];
+        for (const subnet of subnets) {
+          const netuid = subnet.netuid;
+          const payload = {
+            blockNumber,
+            event: text,
+            eventLabel: `SN${netuid} 冷链交换宣布`,
+            data: `旧所有者: ${oldColdkey}, 新冷键Hash: ${newHash}`
+          };
+          this.notifier.alert(
+            `🔑 🔄 关于 🖥️ **${subnet.name} (SN${netuid})** 的冷键交换操作已经宣布。该子网 owner 已宣布冷键交换，新冷键 hash: **${maskedHash}**\n外部编号： ${blockNumber}-${String(index).padStart(4, '0')}`,
+            payload
+          ).catch(() => {});
+          this.emit('alert');
+
+          getSniper().onColdkeySwapAnnounced(netuid, subnet.name, oldColdkey, newHash)
+            .catch(err => this.logger.error('冷键交换抢跑执行异常:', err));
+        }
+      }
+
+      if (/^subtensor(Module)?$/i.test(section) && /^ColdkeySwapped$/i.test(method)) {
+        const data = event.data?.toJSON() || [];
+        const oldColdkey = data[0];
+        const newColdkey = data[1];
+
+        const subnets = new Set([
+          ...(subnetOwners.get(oldColdkey) || []),
+          ...(subnetOwners.get(newColdkey) || [])
+        ]);
+
+        for (const subnet of subnets) {
+          const netuid = subnet.netuid;
+          const payload = {
+            blockNumber,
+            event: text,
+            eventLabel: `SN${netuid} 冷键交换完成`,
+            data: `旧所有者: ${oldColdkey}, 新所有者: ${newColdkey}`
+          };
+          this.notifier.alert(
+            `🔑 ✅ 🖥️ **${subnet.name} (SN${netuid})** 的冷键交换操作已成功完成！\n旧冷键：\`${oldColdkey}\`\n新冷键：\`${newColdkey}\``,
+            payload
+          ).catch(() => {});
+          this.emit('alert');
+        }
+      }
+
       if (/^subtensor(Module)?$/i.test(section) && /^(StakeAdded|StakeRemoved)$/i.test(method)) {
         const human = event.data?.toHuman?.() || event.data?.toString?.();
         const raw = event.data?.toJSON?.() || human;
@@ -670,6 +733,12 @@ export class BittensorMonitor {
             getSniper().onSubnetNameChanged(item.netuid, nameChange.after, nameChange.before)
               .catch(err => this.logger.error('子网改名打新执行异常:', err));
           }
+          const ownerChange = item.fields.find(f => f.field === 'ownerColdkey');
+          if (ownerChange) {
+            this.logger.info(`子网 #${item.netuid} 所有权变更已确认: ${ownerChange.before} -> ${ownerChange.after}`);
+            const text = `📢 🖥️ **${item.name} (SN${item.netuid})** 拥有权变更已通过**链上快照确认**！\n旧所有者：\`${ownerChange.before}\`\n新所有者：\`${ownerChange.after}\``;
+            this.notifier.alert(text, { netuid: item.netuid, eventLabel: '子网所有权变更确认' }).catch(() => {});
+          }
         }
       }
       this.notifier.alert(formatSubnetDiffAlert(diff), diff).catch(() => {});
@@ -793,6 +862,7 @@ function normalizeSubnets(items, registrationCost, immunityPeriod, currentBlock,
       emaPrice: nullableNumber(item.emaPrice ?? item.ema_price ?? item.moving_price),
       volume1h: nullableNumber(item.volume1h ?? item.volume_1h),
       volume24h: nullableNumber(item.volume24h ?? item.volume_24h),
+      ownerColdkey: item.ownerColdkey || null,
       registrationBlock: regBlock,
       immunityPeriod: imm,
       immunityEndsAtBlock: end,
@@ -1050,6 +1120,7 @@ function buildSubnetSnapshot(subnets) {
       return [netuid, {
         netuid,
         name: normalizeText(item.name),
+        ownerColdkey: item.ownerColdkey || null,
         registrationBlock: nullableNumber(item.registrationBlock),
         immunityEndsAtBlock: nullableNumber(item.immunityEndsAtBlock)
       }];
@@ -1069,7 +1140,7 @@ function diffSubnetSnapshots(before, after) {
       continue;
     }
     const fields = [];
-    for (const field of ['name', 'registrationBlock', 'immunityEndsAtBlock']) {
+    for (const field of ['name', 'ownerColdkey', 'registrationBlock', 'immunityEndsAtBlock']) {
       if (!sameSnapshotValue(prev[field], next[field])) {
         fields.push({ field, before: prev[field], after: next[field] });
       }
@@ -1116,6 +1187,7 @@ function formatChangedSubnet(item) {
 function snapshotFieldLabel(field) {
   return {
     name: '名称',
+    ownerColdkey: '所有者',
     registrationBlock: '注册区块',
     immunityEndsAtBlock: '免疫结束区块'
   }[field] || field;

@@ -234,6 +234,13 @@ function populateSniperForm(sniper = {}) {
   form.sniperRenameRetryIntervalMs.value = sniper.renameRetryIntervalMs ?? 200;
   form.sniperRenameTxTimeoutMs.value = sniper.renameTxTimeoutMs ?? 5000;
 
+  form.sniperSwapEnabled.checked = Boolean(sniper.swapEnabled);
+  form.sniperSwapAmountTao.value = sniper.swapAmountTao ?? 1;
+  form.sniperSwapMaxRetries.value = sniper.swapMaxRetries ?? 5;
+  form.sniperSwapBurstCount.value = sniper.swapBurstCount ?? 1;
+  form.sniperSwapRetryIntervalMs.value = sniper.swapRetryIntervalMs ?? 200;
+  form.sniperSwapTxTimeoutMs.value = sniper.swapTxTimeoutMs ?? 5000;
+
   form.sniperDefaultHotkey.value = sniper.defaultHotkey || '';
   renderSniperWallets(sniper.walletList || []);
   renderHotkeyCache(sniper.hotkeyCache || []);
@@ -525,6 +532,13 @@ function collectSniperSettings(form) {
     renameBurstCount: Number(form.sniperRenameBurstCount.value),
     renameRetryIntervalMs: Number(form.sniperRenameRetryIntervalMs.value),
     renameTxTimeoutMs: Number(form.sniperRenameTxTimeoutMs.value),
+
+    swapEnabled: form.sniperSwapEnabled.checked,
+    swapAmountTao: Number(form.sniperSwapAmountTao.value),
+    swapMaxRetries: Number(form.sniperSwapMaxRetries.value),
+    swapBurstCount: Number(form.sniperSwapBurstCount.value),
+    swapRetryIntervalMs: Number(form.sniperSwapRetryIntervalMs.value),
+    swapTxTimeoutMs: Number(form.sniperSwapTxTimeoutMs.value),
 
     defaultHotkey: form.sniperDefaultHotkey.value.trim(),
     wallets: [...document.querySelectorAll('.sniper-wallet-row')].reduce((acc, row) => {

@@ -12,7 +12,7 @@ export class Notifier {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: cfg.chatId, text })
+        body: JSON.stringify({ chat_id: cfg.chatId, text, parse_mode: 'Markdown' })
       });
       if (!res.ok) throw new Error(`Telegram HTTP ${res.status}`);
       return { ok: true };

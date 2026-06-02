@@ -42,6 +42,7 @@ export const defaultConfig = {
   sniper: {
     enabled: false,
     renameEnabled: false,
+    swapEnabled: false,
     amountTao: 1.0,
     maxRetries: 5,
     burstCount: 1,
@@ -52,6 +53,11 @@ export const defaultConfig = {
     renameBurstCount: 1,
     renameRetryIntervalMs: 200,
     renameTxTimeoutMs: 5000,
+    swapAmountTao: 1.0,
+    swapMaxRetries: 5,
+    swapBurstCount: 1,
+    swapRetryIntervalMs: 200,
+    swapTxTimeoutMs: 5000,
     defaultHotkey: DEFAULT_SNIPER_HOTKEY,
     hotkeys: {}, // 格式: { "116": "hotkey 地址" }
     wallets: {} // 格式: { "address": { name: "备注", enabled: true } }
