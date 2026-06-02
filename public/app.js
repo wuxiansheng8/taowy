@@ -117,8 +117,6 @@ function updateDashboard(data) {
   }
   renderCards(data.subnets || []);
   renderLaunches(data.launches || []);
-  renderRenameLaunches(data.renameLaunches || []);
-  renderSwapLaunches(data.swapLaunches || []);
   renderRace(data.race || {});
   renderSubnetColdkeys(data.subnets || []);
 }
@@ -167,36 +165,6 @@ function renderLaunches(items) {
       <td>${escapeHtml(item.source || '--')}</td>
     </tr>
   `).join('') || '<tr><td colspan="6">暂无新子网上线记录</td></tr>';
-}
-
-function renderRenameLaunches(items) {
-  const rows = [...items].slice(0, 10);
-  $('#renameLaunchRows').innerHTML = rows.map((item) => `
-    <tr>
-      <td>${fmtTime(item.ts)}</td>
-      <td>SN${escapeHtml(item.netuid)}</td>
-      <td>${escapeHtml(item.oldName || '--')}</td>
-      <td>${escapeHtml(item.newName || '--')}</td>
-      <td>${item.currentBlock ?? '--'}</td>
-    </tr>
-  `).join('') || '<tr><td colspan="5">暂无子网改名记录</td></tr>';
-}
-
-function renderSwapLaunches(items) {
-  const rows = [...items].slice(0, 10);
-  $('#swapLaunchRows').innerHTML = rows.map((item) => {
-    const masked = item.newHash ? `${item.newHash.slice(0, 6)}..${item.newHash.slice(-4)}` : '--';
-    return `
-      <tr>
-        <td>${fmtTime(item.ts)}</td>
-        <td>SN${escapeHtml(item.netuid)}</td>
-        <td>${escapeHtml(item.name || '--')}</td>
-        <td class="mono" style="font-family:monospace;font-size:11px;">${escapeHtml(item.oldColdkey || '--')}</td>
-        <td class="mono" style="font-family:monospace;font-size:11px;" title="${escapeHtml(item.newHash || '')}">${escapeHtml(masked)}</td>
-        <td>${item.currentBlock ?? '--'}</td>
-      </tr>
-    `;
-  }).join('') || '<tr><td colspan="6">暂无冷键交换宣布记录</td></tr>';
 }
 
 function num(value, fallback) {

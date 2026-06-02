@@ -53,8 +53,6 @@ const ZERO_STATE = {
     recent: []
   },
   launches: [],
-  renameLaunches: [],
-  swapLaunches: [],
   lastAlert: null,
   errors: []
 };
@@ -441,7 +439,6 @@ export class BittensorMonitor {
         const subnets = subnetOwners.get(oldColdkey) || [];
         for (const subnet of subnets) {
           const netuid = subnet.netuid;
-          this.recordSwapLaunch(netuid, subnet.name, oldColdkey, newHash, blockNumber);
           const payload = {
             blockNumber,
             event: text,
@@ -733,7 +730,6 @@ export class BittensorMonitor {
         for (const item of diff.changed) {
           const nameChange = item.fields.find(f => f.field === 'name');
           if (nameChange) {
-            this.recordRenameLaunch(item.netuid, nameChange.before, nameChange.after, currentBlock);
             getSniper().onSubnetNameChanged(item.netuid, nameChange.after, nameChange.before)
               .catch(err => this.logger.error('子网改名打新执行异常:', err));
           }
@@ -771,39 +767,6 @@ export class BittensorMonitor {
     if (!created.length) return;
     this.state.launches = [...created, ...(this.state.launches || [])].slice(0, 10);
     this.logger.info('记录新子网上线', { launches: created.map((item) => ({ netuid: item.netuid, name: item.name, source: item.source })) });
-  }
-
-  recordRenameLaunch(netuid, oldName, newName, currentBlock) {
-    const id = `${netuid}-${oldName}-${newName}-${currentBlock ?? Date.now()}`;
-    const existing = new Set((this.state.renameLaunches || []).map((item) => item.id));
-    if (existing.has(id)) return;
-    const record = {
-      id,
-      ts: Date.now(),
-      netuid,
-      oldName,
-      newName,
-      currentBlock: nullableNumber(currentBlock)
-    };
-    this.state.renameLaunches = [record, ...(this.state.renameLaunches || [])].slice(0, 10);
-    this.logger.info('记录子网改名打新', { netuid, oldName, newName, block: currentBlock });
-  }
-
-  recordSwapLaunch(netuid, name, oldColdkey, newHash, currentBlock) {
-    const id = `${netuid}-${oldColdkey}-${newHash}-${currentBlock ?? Date.now()}`;
-    const existing = new Set((this.state.swapLaunches || []).map((item) => item.id));
-    if (existing.has(id)) return;
-    const record = {
-      id,
-      ts: Date.now(),
-      netuid,
-      name,
-      oldColdkey,
-      newHash,
-      currentBlock: nullableNumber(currentBlock)
-    };
-    this.state.swapLaunches = [record, ...(this.state.swapLaunches || [])].slice(0, 10);
-    this.logger.info('记录冷键交换打新', { netuid, name, oldColdkey, newHash, block: currentBlock });
   }
 
   recordError(error) {
