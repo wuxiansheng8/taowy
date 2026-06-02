@@ -118,6 +118,7 @@ function updateDashboard(data) {
   renderCards(data.subnets || []);
   renderLaunches(data.launches || []);
   renderRace(data.race || {});
+  renderSubnetColdkeys(data.subnets || []);
 }
 
 function renderCards(items) {
@@ -243,7 +244,6 @@ function populateSniperForm(sniper = {}) {
 
   form.sniperDefaultHotkey.value = sniper.defaultHotkey || '';
   renderSniperWallets(sniper.walletList || []);
-  renderHotkeyCache(sniper.hotkeyCache || []);
 }
 
 function renderApiRows(keys) {
@@ -275,15 +275,16 @@ function formatWalletBalance(value) {
   return `${n.toLocaleString('zh-CN', { maximumFractionDigits: 6 })} TAO`;
 }
 
-function renderHotkeyCache(items) {
-  const rows = (items || []).map((item) => `
+function renderSubnetColdkeys(subnets) {
+  const sorted = [...subnets].sort((a, b) => Number(a.netuid) - Number(b.netuid));
+  const rows = sorted.map((s) => `
     <tr>
-      <td>SN${item.netuid}</td>
-      <td class="mono">${item.hotkey ? escapeHtml(item.hotkey) : '--'}</td>
-      <td>${escapeHtml(item.source || '--')}</td>
+      <td>SN${s.netuid}</td>
+      <td>${escapeHtml(s.name || '--')}</td>
+      <td class="mono" style="font-family:monospace;font-size:11px;">${s.ownerColdkey ? escapeHtml(s.ownerColdkey) : '--'}</td>
     </tr>
   `).join('');
-  $('#hotkeyRows').innerHTML = rows || '<tr><td colspan="3">暂无验证者缓存</td></tr>';
+  $('#coldkeyRows').innerHTML = rows || '<tr><td colspan="3">暂无子网数据</td></tr>';
 }
 
 function apiRow(key, i) {
