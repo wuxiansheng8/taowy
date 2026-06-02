@@ -817,21 +817,21 @@ function computeMarketCap(item) {
 function computeLiquidationPrice(item) {
   const taoIn = nullableNumber(item.taoIn ?? item.tao_in);
   const alphaIn = nullableNumber(item.alphaIn ?? item.alpha_in);
-  const alphaOut = nullableNumber(item.alphaOut ?? item.alpha_out);
-  const totalAlpha = (alphaIn ?? 0) + (alphaOut ?? 0);
+  const alphaStaked = nullableNumber(item.alphaStaked ?? item.alpha_staked ?? item.alphaStake ?? item.alpha_stake);
+  const circulatingSupply = (alphaIn ?? 0) + (alphaStaked ?? 0);
 
   if (
     !Number.isFinite(taoIn) ||
     !Number.isFinite(alphaIn) ||
-    !Number.isFinite(alphaOut) ||
-    !Number.isFinite(totalAlpha) ||
+    !Number.isFinite(alphaStaked) ||
+    !Number.isFinite(circulatingSupply) ||
     taoIn <= 0 ||
-    totalAlpha <= 0
+    circulatingSupply <= 0
   ) {
     return null;
   }
 
-  return taoIn / totalAlpha;
+  return taoIn / circulatingSupply;
 }
 
 function hasRealSubnetData(subnets) {
