@@ -846,7 +846,8 @@ function translateSubtensorEvent(method, fallback) {
   const name = String(method || '');
   if (/NeuronRegistered/i.test(name)) return { label: '子网节点注册', lifecycle: false };
   if (/NeuronDeregistered|NeuronRemoved/i.test(name)) return { label: '子网节点注销', lifecycle: false };
-  if (/Identity/i.test(name)) return { label: '子网信息更新', lifecycle: true };
+  if (/SubnetIdentitySet/i.test(name)) return { label: '子网信息更新', lifecycle: true };
+  if (/ChainIdentitySet/i.test(name)) return { label: '链身份信息更新', lifecycle: false };
   if (/SubnetAdded|NetworkAdded/i.test(name)) return { label: '新子网创建', lifecycle: true };
   if (/SubnetRemoved|NetworkRemoved/i.test(name)) return { label: '子网移除', lifecycle: true };
   if (/SubnetPruned|NetworkPruned|Pruned/i.test(name)) return { label: '子网被淘汰', lifecycle: true };
