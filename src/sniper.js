@@ -447,29 +447,57 @@ class Sniper {
     const module = this.api.query.subtensorModule;
     if (!module) return null;
 
-    // Fast-path: query keys map for UID 0, 1, and 2 directly.
-    // This completes in exactly 1-3 direct storage queries instead of a full paged scan of the whole tree.
-    for (let uid = 0; uid < 3; uid++) {
-      try {
-        const keyHex = module.keys.key(netuid, uid);
-        let raw;
-        if (this.pool) {
-          raw = await this.pool.rpc('state_getStorage', [keyHex]);
-        } else {
-          const res = await module.keys(netuid, uid);
-          raw = res.toHex();
-        }
+    // Fast-path: query keys map for UID 0, 1, and 2.
+    // Try to batch query in 1 RPC using state_queryStorageAt (via Pool) or module.keys.multi (via WebSocket).
+    const uids = [0, 1, 2];
+    const keyHexs = uids.map((uid) => module.keys.key(netuid, uid));
 
-        if (raw && raw !== '0x') {
-          const hotkey = this.api.createType('AccountId', raw).toString();
-          if (hotkey && /^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey)) {
-            return { hotkey, source: `subtensorModule.keys(${netuid}, ${uid})`, trusted: true };
+    let resolvedHotkey = null;
+    if (this.pool) {
+      try {
+        const response = await this.pool.rpc('state_queryStorageAt', [keyHexs]);
+        if (response && response[0] && Array.isArray(response[0].changes)) {
+          const resultsMap = new Map();
+          for (const [key, value] of response[0].changes) {
+            if (key) resultsMap.set(key.toLowerCase(), value);
+          }
+
+          for (let uid = 0; uid < 3; uid++) {
+            const keyHex = keyHexs[uid];
+            const raw = resultsMap.get(keyHex.toLowerCase());
+            if (raw && raw !== '0x') {
+              const hotkey = this.api.createType('AccountId', raw).toString();
+              if (hotkey && /^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey)) {
+                resolvedHotkey = { hotkey, source: `subtensorModule.keys(${netuid}, ${uid})`, trusted: true };
+                break;
+              }
+            }
           }
         }
       } catch (err) {
-        this.logger.warn(`查询 UID ${uid} 的 Hotkey 失败，进行重试或轮询`, { error: err.message });
+        this.logger.warn(`通过 pool.state_queryStorageAt 批量查询 hotkey 失败，切换到 WebSocket .multi 查询`, { error: err.message });
       }
     }
+
+    if (!resolvedHotkey) {
+      try {
+        const res = await module.keys.multi(uids.map((uid) => [netuid, uid]));
+        for (let i = 0; i < res.length; i++) {
+          const val = res[i];
+          if (val && !val.isEmpty) {
+            const hotkey = val.toString();
+            if (hotkey && /^[1-9A-HJ-NP-Za-km-z]{47,64}$/.test(hotkey)) {
+              resolvedHotkey = { hotkey, source: `subtensorModule.keys(${netuid}, ${i})`, trusted: true };
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`通过 WebSocket .multi 批量查询 hotkey 失败`, { error: err.message });
+      }
+    }
+
+    if (resolvedHotkey) return resolvedHotkey;
 
     // Fallback to paged scanning if fast-path fails
     for (const method of ['keys', 'hotkeys', 'uids', 'neurons']) {
@@ -567,16 +595,58 @@ class Sniper {
   }
 
   async refreshAllBalances() {
-    await Promise.allSettled(Array.from(this.walletMap.keys()).map((address) => this.refreshWalletState(address)));
+    if (!this.api) return this.getWalletsStatus();
+    const addresses = Array.from(this.walletMap.keys());
+    if (addresses.length === 0) return this.getWalletsStatus();
+
+    try {
+      // 1. Parallel query of nonces and system account states in batch
+      // refreshNonce 会更新 nextNonceByAddress，后续发交易会用到
+      const [accounts] = await Promise.all([
+        this.api.query.system.account.multi(addresses),
+        Promise.all(addresses.map(addr => this.refreshNonce(addr).catch(() => null)))
+      ]);
+
+      const now = new Date().toISOString();
+      addresses.forEach((address, i) => {
+        const account = accounts[i];
+        if (account) {
+          const freePlanck = BigInt(account.data.free.toString());
+          const freeTao = Number(freePlanck) / 1e9;
+          this.balanceByAddress.set(address, { freeTao, updatedAt: now });
+        }
+      });
+    } catch (error) {
+      this.logger.error('批量查询钱包余额或 nonce 失败，回退到单包查询', { error: error.message });
+      await Promise.allSettled(addresses.map((address) => this.refreshWalletState(address)));
+    }
+
     return this.getWalletsStatus();
   }
 
-  refreshBalancesSoon() {
+  async refreshBalancesSoon() {
     if (!this.api) return;
+    const addressesToRefresh = [];
     for (const address of this.walletMap.keys()) {
       const cached = this.balanceByAddress.get(address);
       if (cached && Date.now() - Date.parse(cached.updatedAt) < 10000) continue;
-      this.refreshBalance(address).catch(() => {});
+      addressesToRefresh.push(address);
+    }
+    if (addressesToRefresh.length === 0) return;
+
+    try {
+      const accounts = await this.api.query.system.account.multi(addressesToRefresh);
+      const now = new Date().toISOString();
+      addressesToRefresh.forEach((address, i) => {
+        const account = accounts[i];
+        if (account) {
+          const freePlanck = BigInt(account.data.free.toString());
+          const freeTao = Number(freePlanck) / 1e9;
+          this.balanceByAddress.set(address, { freeTao, updatedAt: now });
+        }
+      });
+    } catch (error) {
+      this.logger.warn('批量刷新即将过期余额失败', { error: error.message });
     }
   }
 

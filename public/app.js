@@ -209,7 +209,6 @@ async function loadSettings() {
   form.timeoutMs.value = cfg.apiPool.timeoutMs;
   form.retries.value = cfg.apiPool.retries;
   form.pollIntervalMs.value = cfg.collector.pollIntervalMs;
-  form.verifyIntervalMs.value = cfg.collector.verifyIntervalMs;
   form.blockTimeMs.value = cfg.collector.blockTimeMs;
   form.tgEnabled.checked = cfg.telegram.enabled;
   form.botToken.value = cfg.telegram.botToken;
@@ -349,7 +348,6 @@ $('#settingsForm').addEventListener('submit', async (event) => {
     },
     collector: {
       pollIntervalMs: Number(form.pollIntervalMs.value),
-      verifyIntervalMs: Number(form.verifyIntervalMs.value),
       blockTimeMs: Number(form.blockTimeMs.value)
     },
     telegram: {

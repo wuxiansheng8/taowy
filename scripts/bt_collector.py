@@ -3,6 +3,7 @@ import argparse
 import json
 import sys
 from substrateinterface import SubstrateInterface
+from concurrent.futures import ThreadPoolExecutor
 
 def plain_value(value):
     if hasattr(value, "value"):
@@ -45,10 +46,10 @@ def get_field(obj, *keys, default=None):
                     return val
     return default
 
-def get_network_immunity_period(sub):
+def get_network_immunity_period(sub, block_hash=None):
     for storage_name in ("NetworkImmunityPeriod", "SubnetImmunityPeriod"):
         try:
-            value = sub.query("SubtensorModule", storage_name)
+            value = sub.query("SubtensorModule", storage_name, block_hash=block_hash)
             if value is not None:
                 parsed = as_number(value)
                 if parsed is not None:
@@ -56,7 +57,7 @@ def get_network_immunity_period(sub):
         except Exception:
             pass
     for method in ("subnetInfo_getNetworkImmunityPeriod", "subnetInfo_getSubnetImmunityPeriod"):
-        value = rpc_request(sub, method)
+        value = rpc_request(sub, method, [block_hash] if block_hash else None)
         parsed = as_number(value)
         if parsed is not None:
             return int(parsed)
@@ -70,34 +71,68 @@ def main():
 
     try:
         sub = SubstrateInterface(url=args.endpoint)
-        current_block = sub.get_block_number(sub.get_chain_head())
+        block_hash = sub.get_chain_head()
+        current_block = sub.get_block_number(block_hash)
 
         try:
-            raw_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost"))
+            raw_cost = as_number(rpc_request(sub, "subnetInfo_getLockCost", [block_hash]))
             registration_cost = raw_cost / 1e9 if raw_cost is not None else None
         except Exception:
             registration_cost = None
 
         print("Collecting subtensor maps...", file=sys.stderr)
         
-        # Query maps
-        owners = {int(k.value): str(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetOwner")}
-        registered_at = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "NetworkRegisteredAt")}
-        alpha_in = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetAlphaIn")}
-        alpha_out = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetAlphaOut")}
-        tao_in = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetTAO")}
+        # Define maps to query in parallel
+        map_names = [
+            "SubnetOwner",
+            "NetworkRegisteredAt",
+            "SubnetAlphaIn",
+            "SubnetAlphaOut",
+            "SubnetTAO",
+            "SubnetMovingPrice",
+            "ImmunityPeriod",
+            "Tempo",
+            "SubnetVolume",
+            "TokenSymbol",
+            "SubnetIdentitiesV3"
+        ]
+
+        def query_single_map(name):
+            try:
+                # Use a fresh connection per thread for safety and concurrency
+                thread_sub = SubstrateInterface(url=args.endpoint)
+                try:
+                    res = list(thread_sub.query_map("SubtensorModule", name, block_hash=block_hash))
+                    return name, res
+                finally:
+                    thread_sub.close()
+            except Exception as e:
+                print(f"Error querying {name}: {e}", file=sys.stderr)
+                return name, []
+
+        print("Querying maps in parallel...", file=sys.stderr)
+        map_results = {}
+        with ThreadPoolExecutor(max_workers=len(map_names)) as executor:
+            for name, res in executor.map(query_single_map, map_names):
+                map_results[name] = res
+
+        owners = {int(k.value): str(v.value) for k, v in map_results.get("SubnetOwner", [])}
+        registered_at = {int(k.value): int(v.value) for k, v in map_results.get("NetworkRegisteredAt", [])}
+        alpha_in = {int(k.value): int(v.value) for k, v in map_results.get("SubnetAlphaIn", [])}
+        alpha_out = {int(k.value): int(v.value) for k, v in map_results.get("SubnetAlphaOut", [])}
+        tao_in = {int(k.value): int(v.value) for k, v in map_results.get("SubnetTAO", [])}
         
         moving_prices = {}
-        for k, v in sub.query_map("SubtensorModule", "SubnetMovingPrice"):
+        for k, v in map_results.get("SubnetMovingPrice", []):
             bits = int(v.value.get("bits", 0) if isinstance(v.value, dict) else v.value)
             moving_prices[int(k.value)] = bits / (2**32)
             
-        immunity_periods = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "ImmunityPeriod")}
-        tempos = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "Tempo")}
-        volumes = {int(k.value): int(v.value) for k, v in sub.query_map("SubtensorModule", "SubnetVolume")}
+        immunity_periods = {int(k.value): int(v.value) for k, v in map_results.get("ImmunityPeriod", [])}
+        tempos = {int(k.value): int(v.value) for k, v in map_results.get("Tempo", [])}
+        volumes = {int(k.value): int(v.value) for k, v in map_results.get("SubnetVolume", [])}
         
         symbols = {}
-        for k, v in sub.query_map("SubtensorModule", "TokenSymbol"):
+        for k, v in map_results.get("TokenSymbol", []):
             try:
                 val = v.value
                 if isinstance(val, bytes):
@@ -113,11 +148,11 @@ def main():
                 symbols[int(k.value)] = "S" + str(k.value)
                 
         identities = {}
-        for k, v in sub.query_map("SubtensorModule", "SubnetIdentitiesV3"):
+        for k, v in map_results.get("SubnetIdentitiesV3", []):
             identities[int(k.value)] = v.value
 
-        network_immunity_period = get_network_immunity_period(sub)
-        next_prune = rpc_request(sub, "subnetInfo_getSubnetToPrune")
+        network_immunity_period = get_network_immunity_period(sub, block_hash=block_hash)
+        next_prune = rpc_request(sub, "subnetInfo_getSubnetToPrune", [block_hash])
         if isinstance(next_prune, str):
             try:
                 next_prune = int(next_prune, 16) if next_prune.startswith("0x") else int(next_prune)

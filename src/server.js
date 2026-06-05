@@ -237,7 +237,6 @@ function sanitizeSettings(current, body) {
   }
   if (body.collector) {
     next.collector.pollIntervalMs = clamp(body.collector.pollIntervalMs, 10000, 3600000, current.collector.pollIntervalMs);
-    next.collector.verifyIntervalMs = clamp(body.collector.verifyIntervalMs, 30000, 3600000, current.collector.verifyIntervalMs);
     next.collector.blockTimeMs = clamp(body.collector.blockTimeMs, 1000, 60000, current.collector.blockTimeMs);
     next.collector.maxSubnets = clamp(body.collector.maxSubnets, 1, 1024, current.collector.maxSubnets);
   }

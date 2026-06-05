@@ -24,7 +24,6 @@ const next = {
   apiPool: current.apiPool || { globalRps: 15, timeoutMs: 10000, retries: 2, keys: [] },
   collector: current.collector || {
     pollIntervalMs: 300000,
-    verifyIntervalMs: 300000,
     blockTimeMs: 12000,
     maxSubnets: 128
   },

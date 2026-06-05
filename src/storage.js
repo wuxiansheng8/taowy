@@ -26,7 +26,6 @@ export const defaultConfig = {
   },
   collector: {
     pollIntervalMs: 300000,
-    verifyIntervalMs: 300000,
     blockTimeMs: 12000,
     maxSubnets: 128
   },

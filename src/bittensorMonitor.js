@@ -147,16 +147,26 @@ export class BittensorMonitor {
   }
 
   async collect() {
-    const [data, prune, taoUsdPrice] = await Promise.all([
+    const [data, taoUsdPrice] = await Promise.all([
       this.python.collect(),
-      this.pool.rpc('subnetInfo_getSubnetToPrune').catch(() => null),
       this.fetchTaoUsdPrice().catch((error) => {
         this.logger.warn('TAO 美元价格获取失败', { error: error.message });
         return this.taoUsdCache.value;
       })
     ]);
     data.taoUsdPrice = taoUsdPrice;
-    if (data.nextPruneCandidate == null && prune != null) data.nextPruneCandidate = parseMaybeNumber(prune);
+
+    // 只有当 Python 采集器未能成功获取 nextPruneCandidate 时，Node.js 才发起补查
+    if (data.nextPruneCandidate == null) {
+      try {
+        const prune = await this.pool.rpc('subnetInfo_getSubnetToPrune');
+        if (prune != null) {
+          data.nextPruneCandidate = parseMaybeNumber(prune);
+        }
+      } catch (error) {
+        this.logger.warn('Node.js 补查即将淘汰子网失败', { error: error.message });
+      }
+    }
     return data;
   }
 
@@ -370,7 +380,7 @@ export class BittensorMonitor {
       this.state.currentBlock = blockNumber;
       this.emit('head');
       try {
-        const hash = await api.rpc.chain.getBlockHash(blockNumber);
+        const hash = header.hash;
         const events = await api.query.system.events.at(hash);
         await this.handleEvents(blockNumber, events);
       } catch (error) {
