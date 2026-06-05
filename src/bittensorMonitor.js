@@ -576,7 +576,8 @@ export class BittensorMonitor {
 
   persistChainFlowCheckpoint({ force = false } = {}) {
     const now = Date.now();
-    if (!force && now - this.lastChainFlowCheckpointAt < CHAIN_FLOW_CHECKPOINT_INTERVAL_MS) {
+    const intervalMs = force ? (5 * 60 * 1000) : CHAIN_FLOW_CHECKPOINT_INTERVAL_MS;
+    if (now - this.lastChainFlowCheckpointAt < intervalMs) {
       return false;
     }
     this.lastChainFlowCheckpointAt = now;
@@ -1013,7 +1014,7 @@ function normalizeDailyFlowBucket(bucket, utcDate) {
     unstakeAlpha: Number(bucket?.unstakeAlpha || 0),
     stakeEvents: Number(bucket?.stakeEvents || 0),
     unstakeEvents: Number(bucket?.unstakeEvents || 0),
-    seen: Array.isArray(bucket?.seen) ? bucket.seen.slice(-20000) : []
+    seen: Array.isArray(bucket?.seen) ? bucket.seen.slice(-3000) : []
   };
 }
 

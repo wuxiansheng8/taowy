@@ -108,7 +108,7 @@ export function loadState() {
 export function saveState(state) {
   ensureDataDir();
   const tmp = `${statePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
   fs.renameSync(tmp, statePath);
 }
 
