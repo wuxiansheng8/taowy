@@ -854,3 +854,39 @@ tr:hover td {
     width: 100%;
   }
 }
+
+.log-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.log-pagination button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.log-pagination button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.log-pagination button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.log-pagination .page-info {
+  font-size: 13px;
+  color: #8c9ba5;
+}

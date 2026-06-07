@@ -81,7 +81,9 @@ app.get('/api/race', requireAuth, (req, res) => {
 });
 
 app.get('/api/logs', requireAuth, (req, res) => {
-  res.json(logger.list({ q: req.query.q, level: req.query.level, limit: req.query.limit || 500 }));
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 200));
+  res.json(logger.list({ q: req.query.q, level: req.query.level, page, pageSize }));
 });
 
 app.get('/api/settings', requireAuth, (req, res) => {

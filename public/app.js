@@ -1,5 +1,5 @@
 const $ = (sel) => document.querySelector(sel);
-const state = { data: null, settings: null, logs: [], sort: 'netuid' };
+const state = { data: null, settings: null, logs: [], sort: 'netuid', logPage: 1, logPageSize: 200, logTotal: 0, logTotalPages: 1 };
 let balanceRefreshTimer = null;
 
 const pages = {
@@ -52,8 +52,16 @@ async function showApp() {
   es.addEventListener('flow', (ev) => updateDashboard(JSON.parse(ev.data)));
   es.addEventListener('log', (ev) => {
     const entry = JSON.parse(ev.data);
-    state.logs.push(entry);
-    renderLogs();
+    if (matchesCurrentLogFilter(entry)) {
+      state.logTotal += 1;
+      state.logTotalPages = Math.ceil(state.logTotal / state.logPageSize);
+      if (state.logPage === 1) {
+        state.logs.unshift(entry);
+        state.logs = state.logs.slice(0, state.logPageSize);
+        renderLogs();
+      }
+      renderPaginationControls();
+    }
     if (isSniperSuccessLog(entry)) scheduleBalanceRefresh();
   });
 }
@@ -563,21 +571,69 @@ async function saveSniperSettings(form) {
 async function loadLogs() {
   const q = encodeURIComponent($('#logSearch').value || '');
   const level = encodeURIComponent($('#logLevel').value || '');
-  state.logs = await api(`/api/logs?q=${q}&level=${level}`);
+  const res = await api(`/api/logs?q=${q}&level=${level}&page=${state.logPage}&pageSize=${state.logPageSize}`);
+  
+  state.logs = res.items;
+  state.logPage = res.page;
+  state.logTotal = res.total;
+  state.logTotalPages = res.totalPages;
+  
   renderLogs();
+  renderPaginationControls();
 }
 
-$('#logSearch').addEventListener('input', debounce(loadLogs, 300));
-$('#logLevel').addEventListener('change', loadLogs);
+$('#logSearch').addEventListener('input', debounce(() => {
+  state.logPage = 1;
+  loadLogs();
+}, 300));
+
+$('#logLevel').addEventListener('change', () => {
+  state.logPage = 1;
+  loadLogs();
+});
 
 function renderLogs() {
-  const logs = [...state.logs].slice(-500).reverse();
+  const logs = state.logs;
   $('#logs').innerHTML = logs.map((log) => `
     <div class="log ${log.level}">
       <b>${escapeHtml(log.level)}</b>${escapeHtml(log.bjTime)} ${escapeHtml(log.message)}
       <pre>${escapeHtml(JSON.stringify(log.meta || {}, null, 2))}</pre>
     </div>
   `).join('') || '<div class="log">暂无日志</div>';
+}
+
+function matchesCurrentLogFilter(entry) {
+  const q = ($('#logSearch').value || '').toLowerCase();
+  const level = $('#logLevel').value || '';
+  if (level && entry.level !== level) return false;
+  if (q && !JSON.stringify(entry).toLowerCase().includes(q)) return false;
+  return true;
+}
+
+function renderPaginationControls() {
+  const container = $('#logPagination');
+  if (!container) return;
+
+  if (!state.logTotal) {
+    container.innerHTML = '<span class="page-info">暂无日志</span>';
+    return;
+  }
+
+  const isAtFirstPage = state.logPage <= 1;
+  const isAtLastPage = state.logPage >= state.logTotalPages;
+
+  container.innerHTML = `
+    <button id="logFirstBtn" ${isAtFirstPage ? 'disabled' : ''}>首页</button>
+    <button id="logPrevBtn" ${isAtFirstPage ? 'disabled' : ''}>上一页</button>
+    <span class="page-info">第 ${state.logPage} / ${state.logTotalPages} 页 (共 ${state.logTotal} 条)</span>
+    <button id="logNextBtn" ${isAtLastPage ? 'disabled' : ''}>下一页</button>
+    <button id="logLastBtn" ${isAtLastPage ? 'disabled' : ''}>尾页</button>
+  `;
+
+  $('#logFirstBtn').onclick = () => { if (state.logPage !== 1) { state.logPage = 1; loadLogs(); } };
+  $('#logPrevBtn').onclick = () => { if (state.logPage > 1) { state.logPage--; loadLogs(); } };
+  $('#logNextBtn').onclick = () => { if (state.logPage < state.logTotalPages) { state.logPage++; loadLogs(); } };
+  $('#logLastBtn').onclick = () => { if (state.logPage !== state.logTotalPages) { state.logPage = state.logTotalPages; loadLogs(); } };
 }
 
 function fmt(value, suffix = '') {
