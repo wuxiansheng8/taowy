@@ -108,7 +108,7 @@ def main():
                     thread_sub.close()
             except Exception as e:
                 print(f"Error querying {name}: {e}", file=sys.stderr)
-                return name, []
+                raise
 
         print("Querying maps in parallel...", file=sys.stderr)
         map_results = {}
